@@ -22,9 +22,8 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/your-repo/codeweaver"
-repository = "https://github.com/your-repo/codeweaver"
-documentation = "https://github.com/your-repo/codeweaver/wiki"
+homepage = "https://github.com/ThomasBury/codeweaver"
+repository = "https://github.com/ThomasBury/codeweaver"
 
 [project.scripts]
 codeweaver = "codeweaver.cli:app"
