@@ -1,0 +1,10 @@
+repo_path: /home/user/project/codeweaver/
+output_dir: ./output
+max_words: 200000
+max_file_size: 10485760  # 10 MB
+skip_patterns:
+ - ".git"
+ - "uv.lock"
+ - ".gitignore"
+skip_dirs: []
+verbose: false
