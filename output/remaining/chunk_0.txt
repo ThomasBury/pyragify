@@ -1,0 +1,1615 @@
+File: config.yaml
+Content:
+repo_path: /home/bsatom/Documents/pyragify
+output_dir: ./output
+max_words: 200000
+max_file_size: 10485760  # 10 MB
+skip_patterns:
+ - ".git"
+ - "uv.lock"
+ - ".gitignore"
+skip_dirs: []
+verbose: false
+
+
+File: LICENSE
+Content:
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <https://unlicense.org>
+
+
+File: pyproject.toml
+Content:
+[project]
+name = "pyragify"
+version = "0.1.0"
+description = "A tool for processing code repositories into semantic chunks for analysis with LLMs, especiallyNotebookLM."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "ThomasBury"}
+]
+license = {text = "The Unlicense"}
+keywords = ["code-processing", "chunking", "repository-analysis", "notebookLM"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+dependencies = [
+    "omegaconf>=2.3.0",
+    "pathspec>=0.12.1",
+    "pyyaml>=6.0.2",
+    "typer>=0.15.1"
+]
+
+[project.urls]
+homepage = "https://github.com/ThomasBury/pyragify"
+repository = "https://github.com/ThomasBury/pyragify"
+
+[project.scripts]
+pyragify = "pyragify.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+Unknown chunk type:
+{'header': '# pyragify', 'content': '\n**pyragify** is a Python-based tool designed to process python code repositories and extract their content into semantic chunks for analysis. It supports Python files, Markdown files, and other common file types. The extracted content is saved in plain text format for compatibility with tools like `NotebookLM`.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Features', 'content': '\n- **Semantic Chunking**: Extracts functions, classes, and inline comments from Python files, as well as headers and sections from Markdown files.\n- **Supported Formats**: Outputs `.txt` files for compatibility with NotebookLM.\n- **Flexible Configuration**: Configure processing options via a YAML file or command-line arguments.\n- **File Skipping**: Respects `.gitignore` and `.dockerignore` patterns and allows custom skip patterns.\n- **Word Limit**: Automatically chunks output files based on a configurable word limit.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Installation', 'content': '\nIf you are using `uv`\n\n```bash\nuv pip install pyragify\n```\n\nTo install pyragify, use `pip`:\n\n```bash\npip install pyragify\n```\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Usage', 'content': '\n'}
+
+Unknown chunk type:
+{'header': '### Best Practice: Run with `uv`', 'content': '\nUsing `uv` ensures consistent dependency management and reproducibility. First, make sure you have `uv` installed:\n\n```bash\npip install uv\n```\n\nThen, run pyragify using `uv`:\n\n```bash\nuv run python -m pyragify --config-file config.yaml\n```\n\nThis ensures your environment is properly isolated and consistent.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '### Chat With Your Code-Base', 'content': '\nHead over []() and input the text file you will find under `[...]/output/remaining/chunk_0.txt` and drop it in a new notebook.\n\nYou can now ask questions, with precise citations. You can even generate a podcast.\n\n![code_chat](chat_code_base.png "Chat with your code base")\n\n\n'}
+
+Unknown chunk type:
+{'header': '### Command-Line Interface (CLI)', 'content': '\nIf you prefer to run pyragify directly without `uv`, use the following command:\n\n```bash\npython -m pyragify.cli process-repo\n```\n\n'}
+
+Unknown chunk type:
+{'header': '### Arguments and Options', 'content': '\n- **`--config-file`** (default: `config.yaml`): Path to the YAML configuration file.\n- **`--repo-path`**: Override the path to the repository to process.\n- **`--output-dir`**: Override the directory where output files will be saved.\n- **`--max-words`**: Override the maximum number of words per output file.\n- **`--max-file-size`**: Override the maximum size (in bytes) of files to process.\n- **`--skip-patterns`**: Override the list of file patterns to skip.\n- **`--skip-dirs`**: Override the list of directories to skip.\n- **`--verbose`**: Enable verbose logging for debugging purposes.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Configuration', 'content': '\nThe tool can be configured using a YAML file (default: `config.yaml`). Here is an example configuration:\n\n```yaml\nrepo_path: /path/to/repository\noutput_dir: /path/to/output\nmax_words: 200000\nmax_file_size: 10485760  # 10 MB\nskip_patterns:\n  - "*.log"\n  - "*.tmp"\nskip_dirs:\n  - "__pycache__"\n  - "node_modules"\nverbose: false\n```\n\nCommand-line arguments override the settings in the YAML file.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Example Workflow', 'content': '\n'}
+
+Unknown chunk type:
+{'header': '### 1. Prepare Your Repository', 'content': '\nEnsure your repository contains the code you want to process. Add any files or directories you want to exclude to `.gitignore` or `.dockerignore`.\n\n'}
+
+Unknown chunk type:
+{'header': '### 2. Configure pyragify', 'content': '\nCreate a `config.yaml` file with your desired settings or use the default settings.\n\n'}
+
+Unknown chunk type:
+{'header': '### 3. Process the Repository', 'content': '\nRun the following command with `uv` for the best practice:\n\n```bash\nuv run python -m pyragify --config-file config.yaml\n```\n\nAlternatively, use the CLI directly:\n\n```bash\npython -m pyragify.cli process-repo --repo-path /path/to/repository --output-dir /path/to/output\n```\n\n'}
+
+Unknown chunk type:
+{'header': '### 4. Check the Output', 'content': '\nThe processed content will be saved in the specified output directory, organized into subdirectories like `python` and `markdown`.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Examples', 'content': '\n'}
+
+Unknown chunk type:
+{'header': '### Process a Repository with Default Settings', 'content': '\n```bash\nuv run python -m pyragify --config-file config.yaml\n```\n\n'}
+
+Unknown chunk type:
+{'header': '### Process a Specific Repository with Custom Settings', 'content': '\n```bash\nuv run python -m pyragify.cli process-repo \\\n  --repo-path /my/repo \\\n  --output-dir /my/output \\\n  --max-words 100000 \\\n  --max-file-size 5242880 \\\n  --skip-patterns "*.log,*.tmp" \\\n  --skip-dirs "__pycache__,node_modules" \\\n  --verbose\n```\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## File Outputs', 'content': '\nThe processed content is saved in `.txt` format and categorized into subdirectories based on file type:\n\n- **`python/`**: Contains chunks of Python functions and classes with their code.\n- **`markdown/`**: Contains sections of Markdown files, split by headers.\n- **`other/`**: Contains plain text versions of unsupported file types.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Advanced Features', 'content': '\n'}
+
+Unknown chunk type:
+{'header': '### Respecting `.gitignore` and `.dockerignore`', 'content': '\npyragify automatically skips files and directories listed in `.gitignore` and `.dockerignore` if they are present in the repository.\n\n'}
+
+Unknown chunk type:
+{'header': '### Incremental Processing', 'content': '\npyragify uses MD5 hashes to skip unchanged files during subsequent runs.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Development', 'content': '\nTo contribute to pyragify:\n\n1. Clone the repository:\n   ```bash\n   git clone https://github.com/your-repo/pyragify.git\n   cd pyragify\n   ```\n\n2. Install dependencies:\n   ```bash\n   pip install -r requirements.txt\n   ```\n\n3. Run tests:\nTODO: write test suite 😅\n   ```bash\n   pytest\n   ```\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## License', 'content': '\nThis project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.\n\n---\n\n'}
+
+Unknown chunk type:
+{'header': '## Support', 'content': '\nFor issues or feature requests, please create a GitHub issue in the repository or contact the maintainers.\n'}
+
+Function: save_json
+Code:
+def save_json(data: dict, file_path: Path, description: str):
+    """
+    Save a dictionary to a JSON file with error handling.
+
+    Parameters
+    ----------
+    data : dict
+        The data to be saved as a JSON file.
+    file_path : pathlib.Path
+        The path where the JSON file should be saved.
+    description : str
+        A description of the file being saved, used in logging messages.
+
+    Raises
+    ------
+    Exception
+        If an error occurs during saving, it will be logged but not raised.
+
+    Notes
+    -----
+    This function logs both successful saves and any errors encountered.
+    """
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        logger.info(f"{description} saved to {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving {description}: {e}")
+
+Function: compute_file_hash
+Code:
+def compute_file_hash(file_path: Path) -> str:
+    """
+    Compute the MD5 hash of a file.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        The path to the file whose hash is to be computed.
+
+    Returns
+    -------
+    str or None
+        The MD5 hash of the file as a hexadecimal string, or None if an error occurs.
+
+    Raises
+    ------
+    Exception
+        If the file cannot be read, the error is logged and None is returned.
+
+    Notes
+    -----
+    MD5 is not suitable for cryptographic purposes but is sufficient for file integrity checks.
+    """
+
+    hash_md5 = hashlib.md5()
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+    except Exception as e:
+        logger.error(f"Error computing hash for {file_path}: {e}")
+        return None
+    return hash_md5.hexdigest()
+
+Function: load_json
+Code:
+def load_json(file_path: Path, description: str) -> dict:
+    """
+    Load a JSON file into a dictionary with error handling.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        The path to the JSON file to be loaded.
+    description : str
+        A description of the file being loaded, used in logging messages.
+
+    Returns
+    -------
+    dict
+        The contents of the JSON file as a dictionary. Returns an empty dictionary if the file cannot be loaded.
+
+    Raises
+    ------
+    Exception
+        If an error occurs during file loading, it will be logged but not raised.
+    """
+
+    if file_path.exists():
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading {description}: {e}")
+    return {}
+
+Function: is_documentation_file
+Code:
+def is_documentation_file(file_path: Path) -> bool:
+    """
+    Check if a file is a documentation file based on its name.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        The path to the file being checked.
+
+    Returns
+    -------
+    bool
+        True if the file is recognized as a documentation file, otherwise False.
+
+    Notes
+    -----
+    This function specifically checks for common documentation filenames such as 'README.md' or 'CHANGELOG.md'.
+    """
+
+    documentation_files = ["README.md", "README.rst", "CONTRIBUTING.md", "CHANGELOG.md"]
+    return file_path.name in documentation_files
+
+Function: read_file_in_chunks
+Code:
+def read_file_in_chunks(file_path: Path, chunk_size: int = 4096):
+    """
+    Read a file in chunks to handle large files efficiently.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        The path to the file to be read.
+    chunk_size : int, optional
+        The size of each chunk in bytes. Default is 4096.
+
+    Yields
+    ------
+    str
+        A chunk of the file as a string.
+
+    Notes
+    -----
+    This function is useful for processing very large files without loading them entirely into memory.
+    """
+
+    with open(file_path, "r", encoding="utf-8") as file:
+        while chunk := file.read(chunk_size):
+            yield chunk
+
+Class: FileProcessor
+Code:
+class FileProcessor:
+    """
+    Class for handling file processing logic.
+
+    This class provides methods for chunking files based on their type, including Python files, Markdown files, and others.
+
+    Attributes
+    ----------
+    repo_path : pathlib.Path
+        The path to the repository being processed.
+    output_dir : pathlib.Path
+        The directory where processed output will be saved.
+
+    Methods
+    -------
+    chunk_python_file(file_path)
+        Chunk a Python file into semantic sections.
+    chunk_markdown_file(file_path)
+        Chunk a Markdown file into sections based on headers.
+    chunk_file(file_path)
+        Chunk a file into semantic sections based on its type.
+    """
+
+    def __init__(self, repo_path: Path, output_dir: Path):
+        self.repo_path = repo_path.resolve()
+        self.output_dir = output_dir.resolve()
+        validate_directory(self.output_dir)
+
+    def chunk_python_file(self, file_path: Path) -> list:
+        """
+        Chunk a Python file into semantic sections, including code, functions, and comments.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the Python file to be chunked.
+
+        Returns
+        -------
+        list of dict
+            A list of dictionaries where each dictionary represents a chunk with metadata and content.
+
+        Notes
+        -----
+        The chunks include functions, classes, and inline comments. Each chunk contains the following keys:
+        - 'type': The type of the chunk (e.g., 'function', 'class', 'comments').
+        - 'name': The name of the function or class (if applicable).
+        - 'docstring': The docstring associated with the function or class.
+        - 'code': The actual code of the function or class.
+        """
+
+        chunks = []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                file_content = f.read()
+
+            # Extract functions and classes using AST
+            tree = ast.parse(file_content)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    func_name = node.name
+                    start_line, end_line = node.lineno, node.end_lineno
+                    code_snippet = "\n".join(file_content.splitlines()[start_line - 1:end_line])
+                    chunks.append({
+                        "type": "function",
+                        "name": func_name,
+                        "code": code_snippet
+                    })
+                elif isinstance(node, ast.ClassDef):
+                    class_name = node.name
+                    start_line, end_line = node.lineno, node.end_lineno
+                    code_snippet = "\n".join(file_content.splitlines()[start_line - 1:end_line])
+                    methods = []
+                    for class_node in node.body:
+                        if isinstance(class_node, ast.FunctionDef):
+                            method_name = class_node.name
+                            methods.append({
+                                "name": method_name,
+                            })
+                    chunks.append({
+                        "type": "class",
+                        "name": class_name,
+                        "methods": methods,
+                        "code": code_snippet
+                    })
+
+            # Extract inline comments using tokenize
+            tokens = tokenize.generate_tokens(StringIO(file_content).readline)
+            comments = []
+            for token in tokens:
+                if token.type == tokenize.COMMENT:
+                    line_number = token.start[0]
+                    comment_text = token.string.lstrip("#").strip()
+                    comments.append({
+                        "type": "comment",
+                        "line": line_number,
+                        "text": comment_text
+                    })
+            if comments:
+                chunks.append({"type": "comments", "content": comments})
+
+        except Exception as e:
+            logger.warning(f"Error chunking Python file {file_path}: {e}")
+        return chunks
+
+    def chunk_markdown_file(self, file_path: Path) -> list:
+        """
+        Chunk a Markdown file into sections based on headers.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the Markdown file to be chunked.
+
+        Returns
+        -------
+        list of dict
+            A list of dictionaries where each dictionary represents a chunk with a header and its associated content.
+
+        Notes
+        -----
+        Each chunk contains the following keys:
+        - 'header': The header text (e.g., '# Title').
+        - 'content': The content under the header.
+        """
+
+        chunks = []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+    
+            current_chunk = {"header": None, "content": ""}
+            for line in lines:
+                if line.startswith("#"):  # Header
+                    if current_chunk["header"] or current_chunk["content"]:
+                        chunks.append(current_chunk)
+                    current_chunk = {"header": line.strip(), "content": ""}
+                else:
+                    current_chunk["content"] += line
+            if current_chunk["header"] or current_chunk["content"]:
+                chunks.append(current_chunk)
+        except Exception as e:
+            logger.warning(f"Error chunking Markdown file {file_path}: {e}")
+        return chunks
+
+    def chunk_file(self, file_path: Path) -> list:
+        """
+        Chunk a file into semantic sections based on its type.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file to be chunked.
+
+        Returns
+        -------
+        list of dict
+            A list of chunks, where each chunk is a dictionary with metadata and content.
+
+        Notes
+        -----
+        This method delegates to type-specific chunking methods based on the file extension. 
+        For unsupported types, the entire file content is treated as a single chunk.
+        """
+
+        if file_path.suffix == ".py":
+            return self.chunk_python_file(file_path)
+        elif file_path.suffix in [".md", ".markdown"]:
+            return self.chunk_markdown_file(file_path)
+        else:
+            try:
+                return [{
+                    "type": "file",
+                    "name": file_path.name,
+                    "content": file_path.read_text(encoding="utf-8")
+                }]
+            except Exception as e:
+                logger.warning(f"Error reading file {file_path}: {e}")
+                return []
+
+Class: RepoContentProcessor
+Code:
+class RepoContentProcessor:
+    """
+    Class for processing an entire repository.
+
+    This class orchestrates file-level processing, manages metadata, and saves the results to disk.
+
+    Attributes
+    ----------
+    repo_path : pathlib.Path
+        The path to the repository being processed.
+    output_dir : pathlib.Path
+        The directory where processed output will be saved.
+    max_words : int
+        The maximum number of words allowed per output chunk.
+    max_file_size : int
+        The maximum file size (in bytes) for processing.
+    skip_patterns : list of str
+        Patterns for files to skip.
+    skip_dirs : list of str
+        Directory names to skip.
+    ignore_patterns : pathspec.PathSpec
+        Compiled patterns for ignoring files.
+    current_word_count : int
+        The current word count for the current chunk.
+    content : str
+        The current content being accumulated for a chunk.
+    hashes : dict
+        Cached file hashes to avoid reprocessing unchanged files.
+    file_counter : collections.defaultdict
+        Counter for output files by type.
+    metadata : dict
+        Metadata about processed and skipped files.
+
+    Methods
+    -------
+    load_ignore_patterns()
+        Load ignore patterns from .gitignore and .dockerignore files.
+    should_skip(file_path)
+        Determine if a file or directory should be skipped.
+    save_chunk(chunk, subdir)
+        Save a chunk of content to a file.
+    save_content(subdir)
+        Save the accumulated content to a file.
+    process_file(file_path)
+        Process a single file, chunking and saving its content.
+    process_repo()
+        Process all files in the repository.
+    get_file_type_subdir(file_path)
+        Determine the output subdirectory for a file based on its type.
+    """
+
+    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None):
+        self.repo_path = repo_path.resolve()
+        self.output_dir = output_dir.resolve()
+        self.max_words = max_words
+        self.max_file_size = max_file_size
+        self.skip_patterns = skip_patterns or [".git"]
+        self.skip_dirs = skip_dirs or ["node_modules", "__pycache__"]
+        self.ignore_patterns = self.load_ignore_patterns()
+        self.current_word_count = 0
+        self.content = ""
+        self.hashes = load_json(self.output_dir / "hashes.json", "hashes")
+        self.file_counter = defaultdict(int)
+        self.metadata = {
+            "processed_files": [],
+            "skipped_files": [],
+            "summary": {"total_files_processed": 0, "total_words": 0}
+        }
+        self.file_processor = FileProcessor(self.repo_path, self.output_dir)
+
+        validate_directory(self.output_dir)
+
+    def load_ignore_patterns(self) -> pathspec.PathSpec:
+        """
+        Load patterns from .gitignore and .dockerignore files if they exist.
+
+        Returns
+        -------
+        pathspec.PathSpec
+            A compiled PathSpec object containing all ignore patterns.
+
+        Notes
+        -----
+        Additional patterns provided via `skip_patterns` are also included. 
+        If the ignore files are missing, only the additional patterns are used.
+        """
+
+        ignore_patterns = []
+
+        for ignore_file in [".gitignore", ".dockerignore"]:
+            file_path = self.repo_path / ignore_file
+            if file_path.exists():
+                logger.info(f"Loading ignore patterns from {ignore_file}")
+                with open(file_path, "r", encoding="utf-8") as f:
+                    ignore_patterns.extend(f.readlines())
+
+        # Add additional skip_patterns
+        ignore_patterns.extend(self.skip_patterns)
+
+        # Compile patterns using pathspec
+        return pathspec.PathSpec.from_lines("gitwildmatch", ignore_patterns)
+
+    def should_skip(self, file_path: Path) -> bool:
+        """
+        Determine if a file or directory should be skipped based on patterns.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file or directory to check.
+
+        Returns
+        -------
+        bool
+            True if the file or directory should be skipped, otherwise False.
+
+        Notes
+        -----
+        This method checks against ignore patterns and explicit directory or file size limits.
+        """
+
+        # Check if the path matches .gitignore or .dockerignore patterns
+        relative_path = file_path.relative_to(self.repo_path)
+        if self.ignore_patterns.match_file(str(relative_path)):
+            logger.info(f"Skipping {relative_path} due to ignore pattern.")
+            return True
+
+        # Skip directories explicitly listed
+        if file_path.is_dir() and file_path.name in self.skip_dirs:
+            logger.info(f"Skipped directory: {file_path}")
+            return True
+
+        # Skip large files
+        if file_path.is_file() and file_path.stat().st_size > self.max_file_size:
+            self.metadata["skipped_files"].append({
+                "path": str(file_path),
+                "reason": "File exceeds size limit"
+            })
+            logger.info(f"Skipped file due to size: {file_path}")
+            return True
+
+        return False
+
+    def save_chunk(self, chunk: dict, subdir: Path):
+        """
+        Save a chunk of content to a text file.
+
+        Parameters
+        ----------
+        chunk : dict
+            The chunk of content to save.
+        subdir : pathlib.Path
+            The subdirectory where the chunk should be saved.
+        """
+        chunk_content = chunk.get("content", "")
+        chunk_word_count = len(chunk_content.split())
+        if self.current_word_count + chunk_word_count > self.max_words:
+            self.save_content(subdir)
+        self.content += self.format_chunk(chunk) + "\n\n"
+        self.current_word_count += chunk_word_count
+
+
+    def save_content(self, subdir: Path):
+        """
+        Save the accumulated content to a file.
+
+        This method writes the currently accumulated content to a file in the specified subdirectory.
+        After saving, the content and word count are reset for the next chunk.
+
+        Parameters
+        ----------
+        subdir : pathlib.Path
+            The subdirectory within the output directory where the chunk file should be saved.
+
+        Notes
+        -----
+        - The file is named `chunk_<counter>.json`, where `<counter>` is an incrementing number for the subdirectory.
+        - If the subdirectory does not exist, it is created automatically.
+        - Once the content is saved, the internal buffer (`self.content`) and the current word count (`self.current_word_count`) are reset to prepare for the next chunk.
+
+        Examples
+        --------
+        To save the current content to a subdirectory:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.content = "This is some chunked content."
+            >>> processor.current_word_count = 5
+            >>> processor.save_content(Path("python"))
+
+        Raises
+        ------
+        OSError
+            If the file cannot be created or written, an error is logged.
+        """
+
+        if self.content:
+            file_path = self.output_dir / subdir / f"chunk_{self.file_counter[subdir]}.txt"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(self.content)
+            logger.info(f"Saved chunk to {file_path}")
+            self.file_counter[subdir] += 1
+            self.content = ""
+            self.current_word_count = 0
+            
+    def format_chunk(self, chunk: dict) -> str:
+        """
+        Format a chunk into plain text for saving.
+
+        Parameters
+        ----------
+        chunk : dict
+            The chunk of content to format.
+
+        Returns
+        -------
+        str
+            A formatted plain-text representation of the chunk.
+        """
+        chunk_type = chunk.get("type", "unknown")
+        if chunk_type == "function":
+            return f"Function: {chunk.get('name')}\nCode:\n{chunk.get('code')}"
+        elif chunk_type == "class":
+            return f"Class: {chunk.get('name')}\nCode:\n{chunk.get('code')}"
+        elif chunk_type == "comments":
+            comments = "\n".join(f"Line {c['line']}: {c['text']}" for c in chunk.get("content", []))
+            return f"Comments:\n{comments}"
+        elif chunk_type == "file":
+            return f"File: {chunk.get('name')}\nContent:\n{chunk.get('content', '')}"
+        else:
+            return f"Unknown chunk type:\n{chunk}"
+
+
+
+    def process_file(self, file_path: Path):
+        """
+        Process a single file.
+
+        This method handles the processing of a single file by checking its hash for changes, chunking its content, and saving the resulting chunks.
+        Metadata about the processed file is updated, and any errors are logged.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file to be processed.
+
+        Notes
+        -----
+        - Files that have unchanged hashes (compared to the cached hashes) are skipped.
+        - Skipped files are logged in the `metadata['skipped_files']` list with reasons for skipping.
+        - Processed files are chunked based on their type, and each chunk is saved to the appropriate subdirectory.
+        - Metadata about processed files, such as the number of chunks, file size, number of lines, and total words, is recorded.
+
+        Raises
+        ------
+        Exception
+            Any errors encountered during file processing are logged and added to the skipped files list, but do not halt execution.
+
+        Examples
+        --------
+        To process a file:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.process_file(Path("repo/example.py"))
+        """
+
+        try:
+            current_hash = compute_file_hash(file_path)
+            if not current_hash:
+                self.metadata["skipped_files"].append({"path": str(file_path), "reason": "Error computing file hash"})
+                logger.warning(f"Skipped file due to hash error: {file_path}")
+                return
+
+            relative_path = str(file_path.relative_to(self.repo_path))
+            if relative_path in self.hashes and self.hashes[relative_path] == current_hash:
+                self.metadata["skipped_files"].append({"path": relative_path, "reason": "Unchanged file (hash match)"})
+                logger.info(f"Skipped unchanged file: {file_path}")
+                return
+
+            subdir = self.get_file_type_subdir(file_path)
+            chunks = self.file_processor.chunk_file(file_path)
+            for chunk in chunks:
+                self.save_chunk(chunk, subdir)
+
+            self.metadata["processed_files"].append({
+                "path": relative_path,
+                "chunks": len(chunks),
+                "size": file_path.stat().st_size,
+                "lines": sum(1 for _ in open(file_path, encoding="utf-8")),
+                "words": sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+            })
+            self.metadata["summary"]["total_files_processed"] += 1
+            self.metadata["summary"]["total_words"] += sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+            self.hashes[relative_path] = current_hash
+        except Exception as e:
+            logger.warning(f"Error processing file {file_path}: {e}")
+            self.metadata["skipped_files"].append({"path": str(file_path), "reason": f"Error processing file: {e}"})
+
+    def process_repo(self):
+        """
+        Process all files in the repository.
+
+        This method iterates over all files in the specified repository directory. It skips files and directories 
+        based on ignore patterns and file size limits, processes supported file types, and saves the results. 
+        Metadata about processed and skipped files is recorded, and the final results are saved to the output directory.
+
+        Notes
+        -----
+        - Files are processed based on their type (e.g., Python files, Markdown files).
+        - Skipped files and directories are logged in the `metadata['skipped_files']`.
+        - Processed files are chunked, and their metadata is updated in `metadata['processed_files']`.
+        - All metadata and hash information is saved to the output directory at the end of processing.
+
+        Parameters
+        ----------
+        None
+
+        Raises
+        ------
+        Exception
+            Errors during individual file processing are logged and added to the skipped files list, but do not halt execution.
+
+        Examples
+        --------
+        To process a repository:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.process_repo()
+
+        Metadata Example:
+            After processing, metadata is saved as JSON:
+            {
+                "processed_files": [
+                    {
+                        "path": "example.py",
+                        "chunks": 3,
+                        "size": 2048,
+                        "lines": 50,
+                        "words": 300
+                    }
+                ],
+                "skipped_files": [
+                    {
+                        "path": ".git/config",
+                        "reason": "Matches ignore pattern"
+                    }
+                ],
+                "summary": {
+                    "total_files_processed": 10,
+                    "total_words": 5000
+                }
+            }
+        """
+
+        logger.info(f"Processing repository: {self.repo_path}")
+        total_files = sum(1 for _ in self.repo_path.rglob("*"))
+        file_count = 0
+
+        for file_path in self.repo_path.rglob("*"):
+            file_count += 1
+            logger.info(f"Processing file {file_count}/{total_files}: {file_path}")
+            if self.should_skip(file_path):
+                continue
+
+            if is_documentation_file(file_path):
+                chunks = self.file_processor.chunk_markdown_file(file_path)
+                for chunk in chunks:
+                    self.save_chunk(chunk, Path("markdown"))
+            elif file_path.suffix == ".py":
+                self.process_file(file_path)
+            elif file_path.is_file():
+                self.process_file(file_path)
+
+        save_json(self.metadata, self.output_dir / "metadata.json", "Metadata")
+        save_json(self.hashes, self.output_dir / "hashes.json", "Hashes")
+
+        if self.content:
+            self.save_content(Path("remaining"))
+
+        logger.info("Repository processing complete.")
+
+    def get_file_type_subdir(self, file_path: Path) -> str:
+        """
+        Determine the subdirectory for a file based on its type.
+
+        This method maps a file's extension to a predefined subdirectory name using the `FILE_TYPE_MAP` dictionary.
+        If the file extension is not recognized, it defaults to "other".
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file whose subdirectory is being determined.
+
+        Returns
+        -------
+        str
+            The name of the subdirectory where the file should be categorized.
+            For example, "python" for `.py` files, "markdown" for `.md` files, and "other" for unrecognized file types.
+
+        Notes
+        -----
+        - The `FILE_TYPE_MAP` dictionary defines the mappings between file extensions and subdirectory names.
+        - This method ensures that files are categorized consistently based on their type.
+
+        Examples
+        --------
+        To get the subdirectory for a file:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.get_file_type_subdir(Path("example.py"))
+            'python'
+
+            >>> processor.get_file_type_subdir(Path("README.md"))
+            'markdown'
+
+            >>> processor.get_file_type_subdir(Path("unknown.xyz"))
+            'other'
+        """
+
+        return FILE_TYPE_MAP.get(file_path.suffix, "other")
+
+Function: __init__
+Code:
+    def __init__(self, repo_path: Path, output_dir: Path):
+        self.repo_path = repo_path.resolve()
+        self.output_dir = output_dir.resolve()
+        validate_directory(self.output_dir)
+
+Function: chunk_python_file
+Code:
+    def chunk_python_file(self, file_path: Path) -> list:
+        """
+        Chunk a Python file into semantic sections, including code, functions, and comments.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the Python file to be chunked.
+
+        Returns
+        -------
+        list of dict
+            A list of dictionaries where each dictionary represents a chunk with metadata and content.
+
+        Notes
+        -----
+        The chunks include functions, classes, and inline comments. Each chunk contains the following keys:
+        - 'type': The type of the chunk (e.g., 'function', 'class', 'comments').
+        - 'name': The name of the function or class (if applicable).
+        - 'docstring': The docstring associated with the function or class.
+        - 'code': The actual code of the function or class.
+        """
+
+        chunks = []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                file_content = f.read()
+
+            # Extract functions and classes using AST
+            tree = ast.parse(file_content)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    func_name = node.name
+                    start_line, end_line = node.lineno, node.end_lineno
+                    code_snippet = "\n".join(file_content.splitlines()[start_line - 1:end_line])
+                    chunks.append({
+                        "type": "function",
+                        "name": func_name,
+                        "code": code_snippet
+                    })
+                elif isinstance(node, ast.ClassDef):
+                    class_name = node.name
+                    start_line, end_line = node.lineno, node.end_lineno
+                    code_snippet = "\n".join(file_content.splitlines()[start_line - 1:end_line])
+                    methods = []
+                    for class_node in node.body:
+                        if isinstance(class_node, ast.FunctionDef):
+                            method_name = class_node.name
+                            methods.append({
+                                "name": method_name,
+                            })
+                    chunks.append({
+                        "type": "class",
+                        "name": class_name,
+                        "methods": methods,
+                        "code": code_snippet
+                    })
+
+            # Extract inline comments using tokenize
+            tokens = tokenize.generate_tokens(StringIO(file_content).readline)
+            comments = []
+            for token in tokens:
+                if token.type == tokenize.COMMENT:
+                    line_number = token.start[0]
+                    comment_text = token.string.lstrip("#").strip()
+                    comments.append({
+                        "type": "comment",
+                        "line": line_number,
+                        "text": comment_text
+                    })
+            if comments:
+                chunks.append({"type": "comments", "content": comments})
+
+        except Exception as e:
+            logger.warning(f"Error chunking Python file {file_path}: {e}")
+        return chunks
+
+Function: chunk_markdown_file
+Code:
+    def chunk_markdown_file(self, file_path: Path) -> list:
+        """
+        Chunk a Markdown file into sections based on headers.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the Markdown file to be chunked.
+
+        Returns
+        -------
+        list of dict
+            A list of dictionaries where each dictionary represents a chunk with a header and its associated content.
+
+        Notes
+        -----
+        Each chunk contains the following keys:
+        - 'header': The header text (e.g., '# Title').
+        - 'content': The content under the header.
+        """
+
+        chunks = []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+    
+            current_chunk = {"header": None, "content": ""}
+            for line in lines:
+                if line.startswith("#"):  # Header
+                    if current_chunk["header"] or current_chunk["content"]:
+                        chunks.append(current_chunk)
+                    current_chunk = {"header": line.strip(), "content": ""}
+                else:
+                    current_chunk["content"] += line
+            if current_chunk["header"] or current_chunk["content"]:
+                chunks.append(current_chunk)
+        except Exception as e:
+            logger.warning(f"Error chunking Markdown file {file_path}: {e}")
+        return chunks
+
+Function: chunk_file
+Code:
+    def chunk_file(self, file_path: Path) -> list:
+        """
+        Chunk a file into semantic sections based on its type.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file to be chunked.
+
+        Returns
+        -------
+        list of dict
+            A list of chunks, where each chunk is a dictionary with metadata and content.
+
+        Notes
+        -----
+        This method delegates to type-specific chunking methods based on the file extension. 
+        For unsupported types, the entire file content is treated as a single chunk.
+        """
+
+        if file_path.suffix == ".py":
+            return self.chunk_python_file(file_path)
+        elif file_path.suffix in [".md", ".markdown"]:
+            return self.chunk_markdown_file(file_path)
+        else:
+            try:
+                return [{
+                    "type": "file",
+                    "name": file_path.name,
+                    "content": file_path.read_text(encoding="utf-8")
+                }]
+            except Exception as e:
+                logger.warning(f"Error reading file {file_path}: {e}")
+                return []
+
+Function: __init__
+Code:
+    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None):
+        self.repo_path = repo_path.resolve()
+        self.output_dir = output_dir.resolve()
+        self.max_words = max_words
+        self.max_file_size = max_file_size
+        self.skip_patterns = skip_patterns or [".git"]
+        self.skip_dirs = skip_dirs or ["node_modules", "__pycache__"]
+        self.ignore_patterns = self.load_ignore_patterns()
+        self.current_word_count = 0
+        self.content = ""
+        self.hashes = load_json(self.output_dir / "hashes.json", "hashes")
+        self.file_counter = defaultdict(int)
+        self.metadata = {
+            "processed_files": [],
+            "skipped_files": [],
+            "summary": {"total_files_processed": 0, "total_words": 0}
+        }
+        self.file_processor = FileProcessor(self.repo_path, self.output_dir)
+
+        validate_directory(self.output_dir)
+
+Function: load_ignore_patterns
+Code:
+    def load_ignore_patterns(self) -> pathspec.PathSpec:
+        """
+        Load patterns from .gitignore and .dockerignore files if they exist.
+
+        Returns
+        -------
+        pathspec.PathSpec
+            A compiled PathSpec object containing all ignore patterns.
+
+        Notes
+        -----
+        Additional patterns provided via `skip_patterns` are also included. 
+        If the ignore files are missing, only the additional patterns are used.
+        """
+
+        ignore_patterns = []
+
+        for ignore_file in [".gitignore", ".dockerignore"]:
+            file_path = self.repo_path / ignore_file
+            if file_path.exists():
+                logger.info(f"Loading ignore patterns from {ignore_file}")
+                with open(file_path, "r", encoding="utf-8") as f:
+                    ignore_patterns.extend(f.readlines())
+
+        # Add additional skip_patterns
+        ignore_patterns.extend(self.skip_patterns)
+
+        # Compile patterns using pathspec
+        return pathspec.PathSpec.from_lines("gitwildmatch", ignore_patterns)
+
+Function: should_skip
+Code:
+    def should_skip(self, file_path: Path) -> bool:
+        """
+        Determine if a file or directory should be skipped based on patterns.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file or directory to check.
+
+        Returns
+        -------
+        bool
+            True if the file or directory should be skipped, otherwise False.
+
+        Notes
+        -----
+        This method checks against ignore patterns and explicit directory or file size limits.
+        """
+
+        # Check if the path matches .gitignore or .dockerignore patterns
+        relative_path = file_path.relative_to(self.repo_path)
+        if self.ignore_patterns.match_file(str(relative_path)):
+            logger.info(f"Skipping {relative_path} due to ignore pattern.")
+            return True
+
+        # Skip directories explicitly listed
+        if file_path.is_dir() and file_path.name in self.skip_dirs:
+            logger.info(f"Skipped directory: {file_path}")
+            return True
+
+        # Skip large files
+        if file_path.is_file() and file_path.stat().st_size > self.max_file_size:
+            self.metadata["skipped_files"].append({
+                "path": str(file_path),
+                "reason": "File exceeds size limit"
+            })
+            logger.info(f"Skipped file due to size: {file_path}")
+            return True
+
+        return False
+
+Function: save_chunk
+Code:
+    def save_chunk(self, chunk: dict, subdir: Path):
+        """
+        Save a chunk of content to a text file.
+
+        Parameters
+        ----------
+        chunk : dict
+            The chunk of content to save.
+        subdir : pathlib.Path
+            The subdirectory where the chunk should be saved.
+        """
+        chunk_content = chunk.get("content", "")
+        chunk_word_count = len(chunk_content.split())
+        if self.current_word_count + chunk_word_count > self.max_words:
+            self.save_content(subdir)
+        self.content += self.format_chunk(chunk) + "\n\n"
+        self.current_word_count += chunk_word_count
+
+Function: save_content
+Code:
+    def save_content(self, subdir: Path):
+        """
+        Save the accumulated content to a file.
+
+        This method writes the currently accumulated content to a file in the specified subdirectory.
+        After saving, the content and word count are reset for the next chunk.
+
+        Parameters
+        ----------
+        subdir : pathlib.Path
+            The subdirectory within the output directory where the chunk file should be saved.
+
+        Notes
+        -----
+        - The file is named `chunk_<counter>.json`, where `<counter>` is an incrementing number for the subdirectory.
+        - If the subdirectory does not exist, it is created automatically.
+        - Once the content is saved, the internal buffer (`self.content`) and the current word count (`self.current_word_count`) are reset to prepare for the next chunk.
+
+        Examples
+        --------
+        To save the current content to a subdirectory:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.content = "This is some chunked content."
+            >>> processor.current_word_count = 5
+            >>> processor.save_content(Path("python"))
+
+        Raises
+        ------
+        OSError
+            If the file cannot be created or written, an error is logged.
+        """
+
+        if self.content:
+            file_path = self.output_dir / subdir / f"chunk_{self.file_counter[subdir]}.txt"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(self.content)
+            logger.info(f"Saved chunk to {file_path}")
+            self.file_counter[subdir] += 1
+            self.content = ""
+            self.current_word_count = 0
+
+Function: format_chunk
+Code:
+    def format_chunk(self, chunk: dict) -> str:
+        """
+        Format a chunk into plain text for saving.
+
+        Parameters
+        ----------
+        chunk : dict
+            The chunk of content to format.
+
+        Returns
+        -------
+        str
+            A formatted plain-text representation of the chunk.
+        """
+        chunk_type = chunk.get("type", "unknown")
+        if chunk_type == "function":
+            return f"Function: {chunk.get('name')}\nCode:\n{chunk.get('code')}"
+        elif chunk_type == "class":
+            return f"Class: {chunk.get('name')}\nCode:\n{chunk.get('code')}"
+        elif chunk_type == "comments":
+            comments = "\n".join(f"Line {c['line']}: {c['text']}" for c in chunk.get("content", []))
+            return f"Comments:\n{comments}"
+        elif chunk_type == "file":
+            return f"File: {chunk.get('name')}\nContent:\n{chunk.get('content', '')}"
+        else:
+            return f"Unknown chunk type:\n{chunk}"
+
+Function: process_file
+Code:
+    def process_file(self, file_path: Path):
+        """
+        Process a single file.
+
+        This method handles the processing of a single file by checking its hash for changes, chunking its content, and saving the resulting chunks.
+        Metadata about the processed file is updated, and any errors are logged.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file to be processed.
+
+        Notes
+        -----
+        - Files that have unchanged hashes (compared to the cached hashes) are skipped.
+        - Skipped files are logged in the `metadata['skipped_files']` list with reasons for skipping.
+        - Processed files are chunked based on their type, and each chunk is saved to the appropriate subdirectory.
+        - Metadata about processed files, such as the number of chunks, file size, number of lines, and total words, is recorded.
+
+        Raises
+        ------
+        Exception
+            Any errors encountered during file processing are logged and added to the skipped files list, but do not halt execution.
+
+        Examples
+        --------
+        To process a file:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.process_file(Path("repo/example.py"))
+        """
+
+        try:
+            current_hash = compute_file_hash(file_path)
+            if not current_hash:
+                self.metadata["skipped_files"].append({"path": str(file_path), "reason": "Error computing file hash"})
+                logger.warning(f"Skipped file due to hash error: {file_path}")
+                return
+
+            relative_path = str(file_path.relative_to(self.repo_path))
+            if relative_path in self.hashes and self.hashes[relative_path] == current_hash:
+                self.metadata["skipped_files"].append({"path": relative_path, "reason": "Unchanged file (hash match)"})
+                logger.info(f"Skipped unchanged file: {file_path}")
+                return
+
+            subdir = self.get_file_type_subdir(file_path)
+            chunks = self.file_processor.chunk_file(file_path)
+            for chunk in chunks:
+                self.save_chunk(chunk, subdir)
+
+            self.metadata["processed_files"].append({
+                "path": relative_path,
+                "chunks": len(chunks),
+                "size": file_path.stat().st_size,
+                "lines": sum(1 for _ in open(file_path, encoding="utf-8")),
+                "words": sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+            })
+            self.metadata["summary"]["total_files_processed"] += 1
+            self.metadata["summary"]["total_words"] += sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+            self.hashes[relative_path] = current_hash
+        except Exception as e:
+            logger.warning(f"Error processing file {file_path}: {e}")
+            self.metadata["skipped_files"].append({"path": str(file_path), "reason": f"Error processing file: {e}"})
+
+Function: process_repo
+Code:
+    def process_repo(self):
+        """
+        Process all files in the repository.
+
+        This method iterates over all files in the specified repository directory. It skips files and directories 
+        based on ignore patterns and file size limits, processes supported file types, and saves the results. 
+        Metadata about processed and skipped files is recorded, and the final results are saved to the output directory.
+
+        Notes
+        -----
+        - Files are processed based on their type (e.g., Python files, Markdown files).
+        - Skipped files and directories are logged in the `metadata['skipped_files']`.
+        - Processed files are chunked, and their metadata is updated in `metadata['processed_files']`.
+        - All metadata and hash information is saved to the output directory at the end of processing.
+
+        Parameters
+        ----------
+        None
+
+        Raises
+        ------
+        Exception
+            Errors during individual file processing are logged and added to the skipped files list, but do not halt execution.
+
+        Examples
+        --------
+        To process a repository:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.process_repo()
+
+        Metadata Example:
+            After processing, metadata is saved as JSON:
+            {
+                "processed_files": [
+                    {
+                        "path": "example.py",
+                        "chunks": 3,
+                        "size": 2048,
+                        "lines": 50,
+                        "words": 300
+                    }
+                ],
+                "skipped_files": [
+                    {
+                        "path": ".git/config",
+                        "reason": "Matches ignore pattern"
+                    }
+                ],
+                "summary": {
+                    "total_files_processed": 10,
+                    "total_words": 5000
+                }
+            }
+        """
+
+        logger.info(f"Processing repository: {self.repo_path}")
+        total_files = sum(1 for _ in self.repo_path.rglob("*"))
+        file_count = 0
+
+        for file_path in self.repo_path.rglob("*"):
+            file_count += 1
+            logger.info(f"Processing file {file_count}/{total_files}: {file_path}")
+            if self.should_skip(file_path):
+                continue
+
+            if is_documentation_file(file_path):
+                chunks = self.file_processor.chunk_markdown_file(file_path)
+                for chunk in chunks:
+                    self.save_chunk(chunk, Path("markdown"))
+            elif file_path.suffix == ".py":
+                self.process_file(file_path)
+            elif file_path.is_file():
+                self.process_file(file_path)
+
+        save_json(self.metadata, self.output_dir / "metadata.json", "Metadata")
+        save_json(self.hashes, self.output_dir / "hashes.json", "Hashes")
+
+        if self.content:
+            self.save_content(Path("remaining"))
+
+        logger.info("Repository processing complete.")
+
+Function: get_file_type_subdir
+Code:
+    def get_file_type_subdir(self, file_path: Path) -> str:
+        """
+        Determine the subdirectory for a file based on its type.
+
+        This method maps a file's extension to a predefined subdirectory name using the `FILE_TYPE_MAP` dictionary.
+        If the file extension is not recognized, it defaults to "other".
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file whose subdirectory is being determined.
+
+        Returns
+        -------
+        str
+            The name of the subdirectory where the file should be categorized.
+            For example, "python" for `.py` files, "markdown" for `.md` files, and "other" for unrecognized file types.
+
+        Notes
+        -----
+        - The `FILE_TYPE_MAP` dictionary defines the mappings between file extensions and subdirectory names.
+        - This method ensures that files are categorized consistently based on their type.
+
+        Examples
+        --------
+        To get the subdirectory for a file:
+            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
+            >>> processor.get_file_type_subdir(Path("example.py"))
+            'python'
+
+            >>> processor.get_file_type_subdir(Path("README.md"))
+            'markdown'
+
+            >>> processor.get_file_type_subdir(Path("unknown.xyz"))
+            'other'
+        """
+
+        return FILE_TYPE_MAP.get(file_path.suffix, "other")
+
+Function: load_yaml_config
+Code:
+def load_yaml_config(config_path: Path) -> dict:
+    """
+    Load a YAML configuration file.
+
+    Parameters
+    ----------
+    config_path : pathlib.Path
+        The path to the YAML configuration file to load.
+
+    Returns
+    -------
+    dict
+        A dictionary representing the contents of the YAML file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file does not exist.
+    ValueError
+        If there is an error parsing the YAML file.
+
+    Notes
+    -----
+    This function uses `yaml.safe_load` to safely parse the YAML file, ensuring only standard YAML structures are loaded.
+
+    Examples
+    --------
+    To load a configuration file:
+        >>> config = load_yaml_config(Path("config.yaml"))
+        >>> print(config)
+        {'repo_path': '/path/to/repo', 'max_words': 100000}
+    """
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Error parsing YAML file: {e}")
+
+Function: validate_directory
+Code:
+def validate_directory(path: Path):
+    """
+    Ensure a directory exists or create it.
+    
+    Parameters
+    ----------
+    path : pathlib.Path
+        The path to the directory to validate or create.
+    
+    Notes
+    -----
+    - If the directory does not exist, it will be created, including any intermediate directories.
+    - If the directory already exists, no action is taken.
+    
+    Examples
+    --------
+    To validate or create a directory:
+        >>> validate_directory(Path("/path/to/output"))
+        # If the directory doesn't exist, it will be created.
+    """
+
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+
+Function: process_repo
+Code:
+def process_repo(
+    config_file: Path = typer.Option("config.yaml", help="Path to the configuration YAML file."),
+    repo_path: Path = typer.Option(None, help="Override: Path to the repository to process."),
+    output_dir: Path = typer.Option(None, help="Override: Directory to save output files."),
+    max_words: int = typer.Option(None, help="Override: Maximum number of words per output file."),
+    max_file_size: int = typer.Option(None, help="Override: Maximum file size to process (in bytes)."),
+    skip_patterns: list[str] = typer.Option(None, help="Override: List of file patterns to skip."),
+    skip_dirs: list[str] = typer.Option(None, help="Override: List of directories to skip."),
+    verbose: bool = typer.Option(None, help="Override: Enable verbose output.")
+):
+    """
+    Process a repository and output its content to text files with a specified word limit.
+
+    This command processes a repository using a configuration file and optional command-line overrides. 
+    It outputs text files based on the repository's contents and saves metadata about the processing.
+
+    Parameters
+    ----------
+    config_file : pathlib.Path, optional
+        The path to the configuration YAML file. Default is "config.yaml".
+    repo_path : pathlib.Path, optional
+        Override for the path to the repository to process. Defaults to the value in the configuration file.
+    output_dir : pathlib.Path, optional
+        Override for the directory where output files will be saved. Defaults to the value in the configuration file.
+    max_words : int, optional
+        Override for the maximum number of words allowed per output file. Defaults to the value in the configuration file.
+    max_file_size : int, optional
+        Override for the maximum file size (in bytes) to process. Defaults to the value in the configuration file.
+    skip_patterns : list of str, optional
+        Override for the list of file patterns to skip (e.g., "*.log", "*.tmp"). Defaults to the value in the configuration file.
+    skip_dirs : list of str, optional
+        Override for the list of directory names to skip (e.g., "node_modules", "__pycache__"). Defaults to the value in the configuration file.
+    verbose : bool, optional
+        Override for enabling verbose output. When enabled, the logging level is set to DEBUG. Defaults to the value in the configuration file.
+
+    Notes
+    -----
+    - If a configuration file exists, its settings are loaded first.
+    - Command-line options take precedence and override corresponding configuration file values.
+    - The repository is processed based on the final resolved configuration, and results are saved to the specified output directory.
+    - Errors during processing are logged, and the command exits with an error code.
+
+    Examples
+    --------
+    Run the command with the default configuration file:
+        $ python -m yourmodule.cli process-repo
+
+    Override the repository path and enable verbose output:
+        $ python -m yourmodule.cli process-repo --repo-path /path/to/repo --verbose
+
+    Specify a custom configuration file:
+        $ python -m yourmodule.cli process-repo --config-file custom_config.yaml
+    """
+
+    # Load configuration from YAML
+    if config_file.exists():
+        config = OmegaConf.load(config_file)
+        logger.info(f"Loaded configuration from {config_file}")
+    else:
+        logger.error(f"Configuration file {config_file} not found.")
+        raise typer.Exit(code=1)
+
+    # Apply CLI overrides
+    overrides = {
+        "repo_path": repo_path,
+        "output_dir": output_dir,
+        "max_words": max_words,
+        "max_file_size": max_file_size,
+        "skip_patterns": skip_patterns,
+        "skip_dirs": skip_dirs,
+        "verbose": verbose,
+    }
+    for key, value in overrides.items():
+        if value is not None:
+            config[key] = value
+
+    if config.verbose:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Verbose mode enabled. Setting logging level to DEBUG.")
+
+    # Initialize and run the processor
+    try:
+        processor = RepoContentProcessor(
+            repo_path=Path(config.repo_path),
+            output_dir=Path(config.output_dir),
+            max_words=config.max_words,
+            max_file_size=config.max_file_size,
+            skip_patterns=config.skip_patterns,
+            skip_dirs=config.skip_dirs
+        )
+        processor.process_repo()
+        logger.info("Repository processing completed successfully!")
+    except Exception as e:
+        logger.error(f"An error occurred during repository processing: {e}")
+        raise typer.Exit(code=1)
+

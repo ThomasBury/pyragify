@@ -1,0 +1,8 @@
+{
+    "config.yaml": "19297c676ccd737bc74ca142405a22a6",
+    "LICENSE": "d88e9e08385d2a17052dac348bde4bc1",
+    "pyproject.toml": "dff1fb3c13c77e4d2fdc1d14aa341454",
+    "src/pyragify/__init__.py": "68b329da9893e34099c7d8ad5cb9c940",
+    "src/pyragify/utils.py": "391f952edb7aa0594c2182904b0e3f45",
+    "src/pyragify/__main__.py": "16b53f88b2d2c1df6a1de58e1c5fe1b3"
+}

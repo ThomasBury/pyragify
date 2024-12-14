@@ -1,5 +1,5 @@
 [project]
-name = "codeweaver"
+name = "pyragify"
 version = "0.1.0"
 description = "A tool for processing code repositories into semantic chunks for analysis with LLMs, especiallyNotebookLM."
 readme = "README.md"
@@ -22,11 +22,11 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/ThomasBury/codeweaver"
-repository = "https://github.com/ThomasBury/codeweaver"
+homepage = "https://github.com/ThomasBury/pyragify"
+repository = "https://github.com/ThomasBury/pyragify"
 
 [project.scripts]
-codeweaver = "codeweaver.cli:app"
+pyragify = "pyragify.cli:app"
 
 [build-system]
 requires = ["hatchling"]

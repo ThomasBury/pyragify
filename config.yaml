@@ -1,4 +1,4 @@
-repo_path: /home/user/project/codeweaver/
+repo_path: /home/user/project/pyragify/
 output_dir: ./output
 max_words: 200000
 max_file_size: 10485760  # 10 MB

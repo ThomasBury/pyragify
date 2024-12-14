@@ -7,7 +7,7 @@ import logging
 from io import StringIO
 from pathlib import Path
 from collections import defaultdict
-from codeweaver.utils import validate_directory
+from pyragify.utils import validate_directory
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -547,12 +547,12 @@ class RepoContentProcessor:
     def format_chunk(self, chunk: dict) -> str:
         """
         Format a chunk into plain text for saving.
-    
+
         Parameters
         ----------
         chunk : dict
             The chunk of content to format.
-    
+
         Returns
         -------
         str

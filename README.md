@@ -1,6 +1,6 @@
-# CodeWeaver
+# pyragify
 
-**CodeWeaver** is a Python-based tool designed to process python code repositories and extract their content into semantic chunks for analysis. It supports Python files, Markdown files, and other common file types. The extracted content is saved in plain text format for compatibility with tools like `NotebookLM`.
+**pyragify** is a Python-based tool designed to process python code repositories and extract their content into semantic chunks for analysis. It supports Python files, Markdown files, and other common file types. The extracted content is saved in plain text format for compatibility with tools like `NotebookLM`.
 
 ---
 
@@ -19,13 +19,13 @@
 If you are using `uv`
 
 ```bash
-uv pip install codeweaver
+uv pip install pyragify
 ```
 
-To install CodeWeaver, use `pip`:
+To install pyragify, use `pip`:
 
 ```bash
-pip install codeweaver
+pip install pyragify
 ```
 
 ---
@@ -40,10 +40,10 @@ Using `uv` ensures consistent dependency management and reproducibility. First, 
 pip install uv
 ```
 
-Then, run CodeWeaver using `uv`:
+Then, run pyragify using `uv`:
 
 ```bash
-uv run python -m codeweaver --config-file config.yaml
+uv run python -m pyragify --config-file config.yaml
 ```
 
 This ensures your environment is properly isolated and consistent.
@@ -61,10 +61,10 @@ You can now ask questions, with precise citations. You can even generate a podca
 
 ### Command-Line Interface (CLI)
 
-If you prefer to run CodeWeaver directly without `uv`, use the following command:
+If you prefer to run pyragify directly without `uv`, use the following command:
 
 ```bash
-python -m codeweaver.cli process-repo
+python -m pyragify.cli process-repo
 ```
 
 ### Arguments and Options
@@ -108,7 +108,7 @@ Command-line arguments override the settings in the YAML file.
 
 Ensure your repository contains the code you want to process. Add any files or directories you want to exclude to `.gitignore` or `.dockerignore`.
 
-### 2. Configure CodeWeaver
+### 2. Configure pyragify
 
 Create a `config.yaml` file with your desired settings or use the default settings.
 
@@ -117,13 +117,13 @@ Create a `config.yaml` file with your desired settings or use the default settin
 Run the following command with `uv` for the best practice:
 
 ```bash
-uv run python -m codeweaver --config-file config.yaml
+uv run python -m pyragify --config-file config.yaml
 ```
 
 Alternatively, use the CLI directly:
 
 ```bash
-python -m codeweaver.cli process-repo --repo-path /path/to/repository --output-dir /path/to/output
+python -m pyragify.cli process-repo --repo-path /path/to/repository --output-dir /path/to/output
 ```
 
 ### 4. Check the Output
@@ -137,13 +137,13 @@ The processed content will be saved in the specified output directory, organized
 ### Process a Repository with Default Settings
 
 ```bash
-uv run python -m codeweaver --config-file config.yaml
+uv run python -m pyragify --config-file config.yaml
 ```
 
 ### Process a Specific Repository with Custom Settings
 
 ```bash
-uv run python -m codeweaver.cli process-repo \
+uv run python -m pyragify.cli process-repo \
   --repo-path /my/repo \
   --output-dir /my/output \
   --max-words 100000 \
@@ -169,22 +169,22 @@ The processed content is saved in `.txt` format and categorized into subdirector
 
 ### Respecting `.gitignore` and `.dockerignore`
 
-CodeWeaver automatically skips files and directories listed in `.gitignore` and `.dockerignore` if they are present in the repository.
+pyragify automatically skips files and directories listed in `.gitignore` and `.dockerignore` if they are present in the repository.
 
 ### Incremental Processing
 
-CodeWeaver uses MD5 hashes to skip unchanged files during subsequent runs.
+pyragify uses MD5 hashes to skip unchanged files during subsequent runs.
 
 ---
 
 ## Development
 
-To contribute to CodeWeaver:
+To contribute to pyragify:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-repo/codeweaver.git
-   cd codeweaver
+   git clone https://github.com/your-repo/pyragify.git
+   cd pyragify
    ```
 
 2. Install dependencies:

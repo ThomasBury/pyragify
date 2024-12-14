@@ -2,7 +2,7 @@ import typer
 import logging
 from pathlib import Path
 from omegaconf import OmegaConf
-from codeweaver.processor import RepoContentProcessor
+from pyragify.processor import RepoContentProcessor
 
 # Configure logging
 logging.basicConfig(
@@ -27,10 +27,10 @@ def process_repo(
 ):
     """
     Process a repository and output its content to text files with a specified word limit.
-    
+
     This command processes a repository using a configuration file and optional command-line overrides. 
     It outputs text files based on the repository's contents and saves metadata about the processing.
-    
+
     Parameters
     ----------
     config_file : pathlib.Path, optional
@@ -49,22 +49,22 @@ def process_repo(
         Override for the list of directory names to skip (e.g., "node_modules", "__pycache__"). Defaults to the value in the configuration file.
     verbose : bool, optional
         Override for enabling verbose output. When enabled, the logging level is set to DEBUG. Defaults to the value in the configuration file.
-    
+
     Notes
     -----
     - If a configuration file exists, its settings are loaded first.
     - Command-line options take precedence and override corresponding configuration file values.
     - The repository is processed based on the final resolved configuration, and results are saved to the specified output directory.
     - Errors during processing are logged, and the command exits with an error code.
-    
+
     Examples
     --------
     Run the command with the default configuration file:
         $ python -m yourmodule.cli process-repo
-    
+
     Override the repository path and enable verbose output:
         $ python -m yourmodule.cli process-repo --repo-path /path/to/repo --verbose
-    
+
     Specify a custom configuration file:
         $ python -m yourmodule.cli process-repo --config-file custom_config.yaml
     """
