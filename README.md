@@ -193,6 +193,7 @@ To contribute to CodeWeaver:
    ```
 
 3. Run tests:
+TODO: write test suite 😅
    ```bash
    pytest
    ```
@@ -208,5 +209,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Support
 
 For issues or feature requests, please create a GitHub issue in the repository or contact the maintainers.
-
-```
