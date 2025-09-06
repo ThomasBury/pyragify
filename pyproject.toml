@@ -1,9 +1,9 @@
 [project]
 name = "pyragify"
-version = "0.1.0"
+version = "0.2.0"
 description = "A tool for processing code repositories into semantic chunks for analysis with LLMs, especiallyNotebookLM."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9, <3.13"
 authors = [
     {name = "ThomasBury"}
 ]
@@ -21,12 +21,21 @@ dependencies = [
     "typer>=0.15.1"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.0.0"
+]
+
 [project.urls]
 homepage = "https://github.com/ThomasBury/pyragify"
 repository = "https://github.com/ThomasBury/pyragify"
 
 [project.scripts]
 pyragify = "pyragify.cli:app"
+
+[tool.pytest.ini_options]
+python_paths = ["src"]
 
 [build-system]
 requires = ["hatchling"]
