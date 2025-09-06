@@ -131,6 +131,13 @@ def is_documentation_file(file_path: Path) -> bool:
 
 FILE_TYPE_MAP = {
     ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".java": "java",
+    ".cpp": "cpp",
+    ".c": "c",
+    ".html": "html",
+    ".css": "css",
     ".md": "markdown",
     ".markdown": "markdown"
 }
@@ -188,7 +195,42 @@ class FileProcessor:
         self.output_dir = output_dir.resolve()
         validate_directory(self.output_dir)
 
-    def chunk_python_file(self, file_path: Path) -> list:
+    def format_chunk(self, chunk: dict) -> str:
+        """
+        Format a chunk into plain text for saving.
+
+        Parameters
+        ----------
+        chunk : dict
+            The chunk of content to format.
+
+        Returns
+        -------
+        str
+            A formatted plain-text representation of the chunk.
+        """
+        chunk_type = chunk.get("type", "unknown")
+        if chunk_type == "function":
+            docstring = f"\nDocstring:\n{chunk['docstring']}" if chunk.get('docstring') else ""
+            return f"Function: {chunk.get('name')}{docstring}\nCode:\n{chunk.get('code')}"
+        elif chunk_type == "class":
+            docstring = f"\nDocstring:\n{chunk['docstring']}" if chunk.get('docstring') else ""
+            return f"Class: {chunk.get('name')}{docstring}\nCode:\n{chunk.get('code')}"
+        elif chunk_type == "comments":
+            comments = "\n".join(f"Line {c['line']}: {c['text']}" for c in chunk.get("content", []))
+            return f"Comments:\n{comments}"
+        elif chunk_type == "file":
+            return f"File: {chunk.get('name')}\nContent:\n{chunk.get('content', '')}"
+        elif chunk_type == "html_script":
+            return f"HTML Script:\n{chunk.get('content', '')}"
+        elif chunk_type == "html_style":
+            return f"HTML Style:\n{chunk.get('content', '')}"
+        elif chunk_type == "css_rule":
+            return f"CSS Rule:\n{chunk.get('content', '')}"
+        else:
+            return f"Unknown chunk type:\n{chunk}"
+
+    def chunk_python_file(self, file_path: Path) -> tuple[list, int]:
         """
         Chunk a Python file into semantic sections, including code, functions, and comments.
 
@@ -209,6 +251,7 @@ class FileProcessor:
         - 'name': The name of the function or class (if applicable).
         - 'docstring': The docstring associated with the function or class.
         - 'code': The actual code of the function or class.
+        - 'line_count': The number of lines in the file.
         """
 
         chunks = []
@@ -216,22 +259,24 @@ class FileProcessor:
             with open(file_path, "r", encoding="utf-8") as f:
                 file_content = f.read()
 
+            lines = file_content.splitlines()
+            line_count = len(lines)
+
             # Extract functions and classes using AST
-            tree = ast.parse(file_content)
+            tree = ast.parse(file_content, filename=file_path)
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef):
                     func_name = node.name
-                    start_line, end_line = node.lineno, node.end_lineno
-                    code_snippet = "\n".join(file_content.splitlines()[start_line - 1:end_line])
+                    code_snippet = ast.get_source_segment(file_content, node)
                     chunks.append({
                         "type": "function",
                         "name": func_name,
+                        "docstring": ast.get_docstring(node),
                         "code": code_snippet
                     })
                 elif isinstance(node, ast.ClassDef):
                     class_name = node.name
-                    start_line, end_line = node.lineno, node.end_lineno
-                    code_snippet = "\n".join(file_content.splitlines()[start_line - 1:end_line])
+                    code_snippet = ast.get_source_segment(file_content, node)
                     methods = []
                     for class_node in node.body:
                         if isinstance(class_node, ast.FunctionDef):
@@ -243,6 +288,7 @@ class FileProcessor:
                         "type": "class",
                         "name": class_name,
                         "methods": methods,
+                        "docstring": ast.get_docstring(node),
                         "code": code_snippet
                     })
 
@@ -263,9 +309,9 @@ class FileProcessor:
 
         except Exception as e:
             logger.warning(f"Error chunking Python file {file_path}: {e}")
-        return chunks
+        return chunks, line_count if 'line_count' in locals() else 0
 
-    def chunk_markdown_file(self, file_path: Path) -> list:
+    def chunk_markdown_file(self, file_path: Path) -> tuple[list, int]:
         """
         Chunk a Markdown file into sections based on headers.
 
@@ -290,22 +336,23 @@ class FileProcessor:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
+            line_count = len(lines)
     
             current_chunk = {"header": None, "content": ""}
             for line in lines:
                 if line.startswith("#"):  # Header
-                    if current_chunk["header"] or current_chunk["content"]:
+                    if current_chunk["header"] or current_chunk["content"].strip():
                         chunks.append(current_chunk)
                     current_chunk = {"header": line.strip(), "content": ""}
                 else:
                     current_chunk["content"] += line
-            if current_chunk["header"] or current_chunk["content"]:
+            if current_chunk["header"] or current_chunk["content"].strip():
                 chunks.append(current_chunk)
         except Exception as e:
             logger.warning(f"Error chunking Markdown file {file_path}: {e}")
-        return chunks
+        return chunks, line_count if 'line_count' in locals() else 0
 
-    def chunk_file(self, file_path: Path) -> list:
+    def chunk_file(self, file_path: Path) -> tuple[list, int]:
         """
         Chunk a file into semantic sections based on its type.
 
@@ -316,29 +363,91 @@ class FileProcessor:
 
         Returns
         -------
-        list of dict
-            A list of chunks, where each chunk is a dictionary with metadata and content.
+        tuple[list, int]
+            A tuple containing a list of chunks and the total number of lines in the file.
 
         Notes
         -----
         This method delegates to type-specific chunking methods based on the file extension. 
         For unsupported types, the entire file content is treated as a single chunk.
         """
-
-        if file_path.suffix == ".py":
+        suffix = file_path.suffix
+        if suffix == ".py":
             return self.chunk_python_file(file_path)
-        elif file_path.suffix in [".md", ".markdown"]:
+        elif suffix in [".md", ".markdown"]:
             return self.chunk_markdown_file(file_path)
+        elif suffix in FILE_TYPE_MAP:
+            return self.chunk_tree_sitter_file(file_path, suffix)
         else:
             try:
-                return [{
+                content = file_path.read_text(encoding="utf-8")
+                line_count = content.count('\n') + 1
+                return ([{
                     "type": "file",
                     "name": file_path.name,
-                    "content": file_path.read_text(encoding="utf-8")
-                }]
+                    "content": content
+                }], line_count)
             except Exception as e:
                 logger.warning(f"Error reading file {file_path}: {e}")
-                return []
+                return [], 0
+
+
+    def chunk_tree_sitter_file(self, file_path: Path, suffix: str) -> tuple[list, int]:
+        """
+        Chunk a file using tree-sitter for supported languages.
+
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            The path to the file to be chunked.
+        suffix : str
+            The file suffix (extension) to determine the language.
+
+        Returns
+        -------
+        list of dict
+            A list of dictionaries, each representing a semantic chunk with keys like 'type', 'name', and 'code' or 'content'.
+
+        Notes
+        -----
+        Supports semantic extraction for JavaScript/TypeScript (functions, classes, arrow functions), Java (methods, classes), C/C++ (functions, structs), HTML (scripts, styles), and CSS (rules). Falls back to full content if parsing fails.
+        """
+        try:
+            source = file_path.read_text(encoding="utf-8")
+            line_count = source.count('\n') + 1
+            lang_name = FILE_TYPE_MAP[suffix]
+
+            chunks = []
+            if lang_name == "html":
+                # Simple regex fallback for tags
+                import re
+                scripts = re.findall(r'<script[^>]*>(.*?)</script>', source, re.DOTALL | re.IGNORECASE)
+                for script in scripts:
+                    chunks.append({"type": "html_script", "content": script.strip()})
+                styles = re.findall(r'<style[^>]*>(.*?)</style>', source, re.DOTALL | re.IGNORECASE)
+                for style in styles:
+                    chunks.append({"type": "html_style", "content": style.strip()})
+                if not chunks:
+                    chunks = [{"type": "html", "content": source}]
+
+            # CSS: Chunk by rules
+            elif lang_name == "css":
+                import re
+                rules = re.split(r'([@][^{]+{[^}]*}|{[^{}]*})', source)
+                for rule in rules:
+                    if rule.strip() and '{' in rule:
+                        chunks.append({"type": "css_rule", "content": rule.strip()})
+                if not chunks:
+                    chunks = [{"type": "css", "content": source}]
+
+            if not chunks:
+                chunks = [{"type": "file", "name": file_path.name, "content": source}]
+
+            return chunks, line_count
+        except Exception as e:
+            logger.warning(f"Error chunking {suffix} file {file_path}: {e}")
+            content = file_path.read_text(encoding="utf-8")
+            return [{"type": "file", "name": file_path.name, "content": content}], content.count('\n') + 1
 
 class RepoContentProcessor:
     """
@@ -494,11 +603,11 @@ class RepoContentProcessor:
         subdir : pathlib.Path
             The subdirectory where the chunk should be saved.
         """
-        chunk_content = chunk.get("content", "")
-        chunk_word_count = len(chunk_content.split())
+        formatted = self.file_processor.format_chunk(chunk)
+        chunk_word_count = len(formatted.split())
         if self.current_word_count + chunk_word_count > self.max_words:
             self.save_content(subdir)
-        self.content += self.format_chunk(chunk) + "\n\n"
+        self.content += formatted + "\n\n"
         self.current_word_count += chunk_word_count
 
 
@@ -544,35 +653,6 @@ class RepoContentProcessor:
             self.content = ""
             self.current_word_count = 0
             
-    def format_chunk(self, chunk: dict) -> str:
-        """
-        Format a chunk into plain text for saving.
-
-        Parameters
-        ----------
-        chunk : dict
-            The chunk of content to format.
-
-        Returns
-        -------
-        str
-            A formatted plain-text representation of the chunk.
-        """
-        chunk_type = chunk.get("type", "unknown")
-        if chunk_type == "function":
-            return f"Function: {chunk.get('name')}\nCode:\n{chunk.get('code')}"
-        elif chunk_type == "class":
-            return f"Class: {chunk.get('name')}\nCode:\n{chunk.get('code')}"
-        elif chunk_type == "comments":
-            comments = "\n".join(f"Line {c['line']}: {c['text']}" for c in chunk.get("content", []))
-            return f"Comments:\n{comments}"
-        elif chunk_type == "file":
-            return f"File: {chunk.get('name')}\nContent:\n{chunk.get('content', '')}"
-        else:
-            return f"Unknown chunk type:\n{chunk}"
-
-
-
     def process_file(self, file_path: Path):
         """
         Process a single file.
@@ -618,7 +698,7 @@ class RepoContentProcessor:
                 return
 
             subdir = self.get_file_type_subdir(file_path)
-            chunks = self.file_processor.chunk_file(file_path)
+            chunks, line_count = self.file_processor.chunk_file(file_path)
             for chunk in chunks:
                 self.save_chunk(chunk, subdir)
 
@@ -626,11 +706,11 @@ class RepoContentProcessor:
                 "path": relative_path,
                 "chunks": len(chunks),
                 "size": file_path.stat().st_size,
-                "lines": sum(1 for _ in open(file_path, encoding="utf-8")),
-                "words": sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+                "lines": line_count,
+                "words": sum(len(self.file_processor.format_chunk(chunk).split()) for chunk in chunks)
             })
             self.metadata["summary"]["total_files_processed"] += 1
-            self.metadata["summary"]["total_words"] += sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+            self.metadata["summary"]["total_words"] += sum(len(self.file_processor.format_chunk(chunk).split()) for chunk in chunks)
             self.hashes[relative_path] = current_hash
         except Exception as e:
             logger.warning(f"Error processing file {file_path}: {e}")
@@ -701,13 +781,7 @@ class RepoContentProcessor:
             if self.should_skip(file_path):
                 continue
 
-            if is_documentation_file(file_path):
-                chunks = self.file_processor.chunk_markdown_file(file_path)
-                for chunk in chunks:
-                    self.save_chunk(chunk, Path("markdown"))
-            elif file_path.suffix == ".py":
-                self.process_file(file_path)
-            elif file_path.is_file():
+            if file_path.is_file():
                 self.process_file(file_path)
 
         save_json(self.metadata, self.output_dir / "metadata.json", "Metadata")
