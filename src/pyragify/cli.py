@@ -72,10 +72,12 @@ def process_repo(
     # Load configuration from YAML
     if config_file.exists():
         config = OmegaConf.load(config_file)
-        logger.info(f"Loaded configuration from {config_file}")
+        logger.info(f"Loaded configuration from '{config_file}'")
     else:
-        logger.error(f"Configuration file {config_file} not found.")
-        raise typer.Exit(code=1)
+        config = OmegaConf.create()
+        if repo_path is None: # No --repo-path override
+            logger.error(f"Configuration file '{config_file}' not found and --repo-path not provided.")
+            raise typer.Exit(code=1)
 
     # Apply CLI overrides
     overrides = {
@@ -95,10 +97,22 @@ def process_repo(
         logger.setLevel(logging.DEBUG)
         logger.debug("Verbose mode enabled. Setting logging level to DEBUG.")
 
+    # Validate repo_path after config is loaded and merged
+    if "repo_path" not in config or not config.repo_path:
+        typer.echo("Error: repo_path must be defined in the config file or via --repo-path.", err=True)
+        raise typer.Exit(code=1)
+
+    repo_path_obj = Path(config.repo_path)
+    if not repo_path_obj.exists():
+        typer.echo(f"Error: Repository path '{config.repo_path}' does not exist.", err=True)
+        raise typer.Exit(code=1)
+    if not repo_path_obj.is_dir():
+        typer.echo(f"Error: Repository path '{config.repo_path}' is not a directory.", err=True)
+        raise typer.Exit(code=1)
     # Initialize and run the processor
     try:
         processor = RepoContentProcessor(
-            repo_path=Path(config.repo_path),
+            repo_path=repo_path_obj,
             output_dir=Path(config.output_dir),
             max_words=config.max_words,
             max_file_size=config.max_file_size,
