@@ -1,0 +1,30 @@
+# Pyragify Config: Optimized for Text2Flow/Visualization Project which is on my repo.
+
+# Use the current directory as the source for weaving
+repo_path: "."
+
+# The folder where the LLM-ready "weaved" text will be saved
+output_dir: "./llm_analysis"
+
+# These are the files to ignore so we only push the essential files to the LLM.
+skip_patterns:
+  - "*.min.js"
+  - "*.map"
+  - "bundle.js"
+  - "*-lock.json"
+  - "*.svg"
+
+# Standard heavy folders/files to bypass
+skip_dirs:
+  - "node_modules"
+  - "dist"
+  - "build"
+  - "__pycache__"
+  - ".git"
+
+# High max_words allows complex flowchart grammars to stay 
+# within a single window for better RAG performance.
+max_words: 500000
+
+# # Provide essential feedback in the terminal while processing
+verbose: true
