@@ -1,4 +1,4 @@
-# Pyragify Config: Optimized for Text2Flow/Visualization Project which is on my repo.
+# Pyragify Config: Optimized for Text2Flow/Visualization.
 
 # Use the current directory as the source for weaving
 repo_path: "."
@@ -14,7 +14,7 @@ skip_patterns:
   - "*-lock.json"
   - "*.svg"
 
-# Standard heavy folders/files to bypass
+# Standard heavy folders/files to bypass.
 skip_dirs:
   - "node_modules"
   - "dist"
@@ -26,5 +26,8 @@ skip_dirs:
 # within a single window for better RAG performance.
 max_words: 500000
 
-# # Provide essential feedback in the terminal while processing
+# Required to prevent CLI runtime failure.
+max_file_size: 10485760 #10MB
+
+# # Provide essential feedback in the terminal while processing.
 verbose: true
