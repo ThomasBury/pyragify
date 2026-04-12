@@ -155,3 +155,7 @@ Contributions are welcome. Open an issue for bugs or feature requests, then send
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ThomasBury/pyragify&type=Date)](https://www.star-history.com/#ThomasBury/pyragify&Date)
