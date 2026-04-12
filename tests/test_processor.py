@@ -162,14 +162,37 @@ class TestFileProcessor:
         processor = FileProcessor(tmp_path, output_dir)
         chunks, line_count = processor.chunk_markdown_file(sample_markdown_file)
         assert line_count > 0
-        assert len(chunks) == 2  # Two headers
+        assert len(chunks) == 2
         assert chunks[0]["header"] == "# Header 1"
+        assert chunks[0]["name"] == "Header 1"
+        assert chunks[1]["name"] == "Header 1 > Header 2"
         assert "Content under header 1" in chunks[0]["content"]
 
+    def test_chunk_markdown_file_ignores_headers_inside_code_fences(self, tmp_path):
+        """Test Markdown chunking keeps fenced code blocks intact."""
+        file_path = tmp_path / "sample.md"
+        file_path.write_text(
+            "# Guide\n"
+            "Intro text.\n"
+            "```bash\n"
+            "# not a header\n"
+            "echo hi\n"
+            "```\n"
+            "## Usage\n"
+            "Run it.\n"
+        )
+        processor = FileProcessor(tmp_path, tmp_path / "output")
+        chunks, _ = processor.chunk_markdown_file(file_path)
+
+        assert len(chunks) == 2
+        assert "# not a header" in chunks[0]["content"]
+        assert chunks[0]["name"] == "Guide"
+        assert chunks[1]["name"] == "Guide > Usage"
+
     @pytest.mark.parametrize("file_fixture, suffix, expected_types", [
-        ("sample_js_file", ".js", ["file"]),
-        ("sample_java_file", ".java", ["file"]),
-        ("sample_cpp_file", ".cpp", ["file"]),
+        ("sample_js_file", ".js", ["file"]),  # Tree-sitter has version compatibility issues
+        ("sample_java_file", ".java", ["file"]),  # Tree-sitter has version compatibility issues
+        ("sample_cpp_file", ".cpp", ["file"]),  # Tree-sitter has version compatibility issues
         ("sample_html_file", ".html", ["html_script", "html_style"]),
         ("sample_css_file", ".css", ["css_rule"]),
     ])
@@ -194,19 +217,26 @@ class TestFileProcessor:
         md_chunks, _ = processor.chunk_file(sample_markdown_file)
         assert "header" in md_chunks[0]
         js_chunks, _ = processor.chunk_file(sample_js_file)
-        assert any(c["type"] == "file" for c in js_chunks)
+        assert any(c["type"] == "file" for c in js_chunks)  # Tree-sitter fallback
 
     def test_format_chunk(self):
         """Test formatting various chunk types."""
         processor = FileProcessor(Path("."), Path("."))
         func_chunk = {"type": "function", "name": "test", "code": "def test(): pass", "docstring": "A test function."}
-        formatted = processor.format_chunk(func_chunk)
-        assert "Function: test" in formatted
-        assert "Docstring:\nA test function." in formatted
+        formatted = processor.format_chunk(func_chunk, "dummy/path.py")
+        assert "File: dummy/path.py" in formatted
+        assert "Type: Function" in formatted
+        assert "### Function: `test`" in formatted
         assert "def test(): pass" in formatted
-        html_chunk = {"type": "html_script", "content": "<script>alert('hi');</script>"}
-        formatted_html = processor.format_chunk(html_chunk)
-        assert "HTML Script:" in formatted_html
+        html_chunk = {"type": "html_script", "content": "alert('hi');"}
+        formatted_html = processor.format_chunk(html_chunk, "dummy/index.html")
+        assert "File: dummy/index.html" in formatted_html
+        assert "Type: Html Script" in formatted_html
+        assert "alert('hi')" in formatted_html
+        markdown_chunk = {"type": "markdown", "header": "## Usage", "name": "Guide > Usage", "content": "Run it."}
+        formatted_markdown = processor.format_chunk(markdown_chunk, "dummy/readme.md")
+        assert "### Guide > Usage" in formatted_markdown
+        assert "### ## Usage" not in formatted_markdown
 
     def test_chunk_file_unreadable(self, tmp_path, caplog):
         """Test that chunking an unreadable file is handled gracefully."""
