@@ -1,163 +1,157 @@
-# pyragify: Unlock the Power of Your Code with NotebookLM  
+# Pyragify
 
-**pyragify** is a Python-based tool designed to **transform your Python code repositories into a format that's ready for analysis with large language models (LLMs), specifically NotebookLM.** It breaks down complex code structures into manageable semantic chunks, making it easier to understand, analyze, and extract insights from your code.
+Pyragify turns a code repository into plain-text chunks that are easier to load into NotebookLM and other LLM tools. It extracts semantic units from source files, writes `.txt` output grouped by file type, and stores metadata for incremental re-runs.
 
-## Why pyragify?
+## What It Does
 
-* **Boost Code Comprehension:**  pyragify makes it easier to digest large codebases by dividing them into smaller, logical units.
-* **Effortless Analysis:** The structured output simplifies the process of analyzing code, identifying patterns, and extracting knowledge.
-* **Unlock the Power of NotebookLM:** pyragify prepares your code for use with NotebookLM, allowing you to leverage the power of LLMs for tasks like code summarization, documentation generation, and question answering.
+- Chunks Python code into functions, classes, and comments
+- Splits Markdown files by header sections
+- Processes common repository files into LLM-friendly text output
+- Respects `.gitignore` and `.dockerignore` patterns
+- Tracks file hashes so unchanged files can be skipped on later runs
 
-## Key Features
+## Supported Inputs
 
-* **Semantic Chunking:** pyragify intelligently extracts functions, classes, and comments from Python files, as well as headers and sections from Markdown files, preserving the context and meaning.
-* **Wide Format Support:** It handles Python (.py), Markdown (.md, .markdown), HTML (.html), CSS (.css), and other common file types, ensuring all your repository content is processed.
-* **Smart Parsing:** Uses AST for Python files, regex-based parsing for HTML/CSS, and header-based chunking for Markdown files.
-* **Seamless Integration with NotebookLM:** The output format is specifically designed for compatibility with NotebookLM, making it easy to analyze your code with powerful LLMs.
-* **Flexible Configuration:** Tailor the processing through a YAML file or command-line arguments to fit your specific needs.
-* **File Skipping:** Respect your `.gitignore` and `.dockerignore` files, and define custom skip patterns for even more control.
-* **Word Limit Control:** Automatically chunks output files based on a configurable word limit to ensure manageable file sizes.
-* **Input Validation:** Validates repository paths and provides clear error messages for invalid inputs.
+Pyragify has dedicated handling for:
 
-## Getting Started
+- Python: `.py`
+- Markdown: `.md`, `.markdown`
+- HTML: `.html`
+- CSS: `.css`
+- Other common repository files are included as plain text when they can be read as UTF-8
 
-### Installation
+## Installation
 
-1. **Using uv (Recommended):**
+### Install From PyPI
 
-    ```bash
-    uv pip install pyragify
-    ```
-
-    `uv` is a blazing fast Python package manager that handles virtual environments and dependencies automatically.
-
-2. **Using pip:**
-
-    ```bash
-    pip install pyragify
-    ```
-
-3. **From Source:**
-
-    ```bash
-    git clone https://github.com/ThomasBury/pyragify.git
-    cd pyragify
-    uv pip install -e .
-    ```
-
-### Usage
-
-1. **Best Practice with uv:**
-
-    ```bash
-    uv run pyragify --config-file config.yaml
-    ```
-
-See below for details about the configuration file.
-
-2. **Direct CLI Execution:**
-
-    ```bash
-    python -m pyragify --config-file config.yaml
-    ```
-
-#### Arguments and Options
-
-See `pyragify --help` for a full list of options.
-
-* `--config-file`: Path to the YAML configuration file (default: config.yaml).
-* `--repo-path`: Override the repository path.
-* `--output-dir`: Override the output directory.
-* `--max-words`: Override the maximum words per output file.
-* `--max-file-size`: Override the maximum file size (in bytes) to process.
-* `--skip-patterns`: Override file patterns to skip.
-* `--skip-dirs`: Override directories to skip.
-* `--verbose`: Enable detailed logging for debugging.
-
-### Configuration (config.yaml)
-
-```yaml
-repo_path: /path/to/repository
-output_dir: /path/to/output
-max_words: 200000
-max_file_size: 10485760 # 10 MB
-skip_patterns:
- - "*.log"
- - "*.tmp"
-skip_dirs:
- - "__pycache__"
- - "node_modules"
-verbose: false
+```bash
+uv pip install pyragify
 ```
 
-## Example Workflow
+or
 
-1. **Prepare Your Repository:** Make sure your repository contains the code you want to process. Utilize `.gitignore` or `.dockerignore` to exclude unwanted files or directories.
-2. **Configure pyragify:** Create a `config.yaml` file with your desired settings or use the default configuration.
-3. **Process the Repository:** Run pyragify using uv (recommended):
+```bash
+pip install pyragify
+```
 
-    ```bash
-    uv run pyragify --config-file config.yaml
-    ```
+### Install From Source
 
-4. **Check the Output:** Your processed content is neatly organized by file type in the specified output directory.
+```bash
+git clone https://github.com/ThomasBury/pyragify.git
+cd pyragify
+uv sync --group dev
+```
 
-## Chat with Your Codebase (with NotebookLM)
+## Quick Start
 
-1. Navigate to NotebookLM.
-2. Upload the `chunk_0.txt` file (or other relevant chunks) from the pyragify output directory to a new notebook.
-3. Start asking questions and get insights with precise citations! You can even generate a podcast from your code.
-    ![code_chat](chat_code_base.png "Chat with your code base")
+### Run With A Config File
 
-## Output Structure
-
-The processed content is saved as `.txt` files and categorized into subdirectories based on the file type:
-
-* `python/`:  Contains chunks of Python functions, classes, and their code.
-* `markdown/`:  Contains sections of Markdown files split by headers.
-* `html/`:  Contains HTML script and style chunks extracted from HTML files.
-* `css/`:  Contains CSS rule chunks from CSS files.
-* `other/`:  Contains plain-text versions of unsupported file types.
-
-## Advanced Features
-
-* **Input Validation:** Validates repository paths and provides clear error messages for invalid inputs.
-* **Respect for Ignore Files:** pyragify automatically honors `.gitignore` and `.dockerignore` patterns.
-* **Incremental Processing:** MD5 hashes are used to efficiently skip unchanged files during subsequent runs.
-
-## Contributing
-
-We welcome contributions! To contribute to pyragify:
-
-1. Clone the repository.
-2. Install dependencies.
-3. Run tests. (Test suite is under development).
-
-## Support
-
-Feel free to create a GitHub issue for any questions, bug reports, or feature requests.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Example Usages
-
-**Process a Repository with Default Settings:**
+The default entrypoint is `pyragify`.
 
 ```bash
 uv run pyragify --config-file config.yaml
 ```
 
-**Process a Specific Repository with Custom Settings:**
+You can also run it as a module:
+
+```bash
+python -m pyragify --config-file config.yaml
+```
+
+### Run Without A Config File
+
+If you do not use `config.yaml`, pass every setting you want to rely on directly on the command line.
 
 ```bash
 uv run pyragify \
- --repo-path /my/repo \
- --output-dir /my/output \
- --max-words 100000 \
- --max-file-size 5242880 \
- --skip-patterns "*.log,*.tmp" \
- --skip-dirs "__pycache__,node_modules" \
- --verbose
+  --repo-path /path/to/repository \
+  --output-dir /path/to/output \
+  --max-words 200000 \
+  --max-file-size 10485760 \
+  --skip-patterns "*.log" \
+  --skip-patterns "*.tmp" \
+  --skip-dirs "__pycache__" \
+  --skip-dirs "node_modules" \
+  --verbose
 ```
+
+## CLI Notes
+
+- Use `pyragify --help` for the full option list
+- Command-line options override values loaded from `config.yaml`
+- Repeat `--skip-patterns` once per pattern
+- Repeat `--skip-dirs` once per directory name
+
+## Configuration
+
+Example `config.yaml`:
+
+```yaml
+repo_path: /path/to/repository
+output_dir: /path/to/output
+max_words: 200000
+max_file_size: 10485760  # 10 MB
+skip_patterns:
+  - "*.log"
+  - "*.tmp"
+skip_dirs:
+  - "__pycache__"
+  - "node_modules"
+verbose: false
+```
+
+## Example Workflow
+
+1. Point `repo_path` at the repository you want to process.
+2. Choose an `output_dir` where generated chunks and metadata should be written.
+3. Run `uv run pyragify --config-file config.yaml` or pass the same settings on the command line.
+4. Open the generated files in `output/`, especially `output/remaining/chunk_0.txt`, in NotebookLM or another LLM workflow.
+
+## Output Structure
+
+The generated output is grouped by content type:
+
+- `python/`: Python functions, classes, and comment chunks
+- `markdown/`: Markdown sections split by headers
+- `html/`: HTML script and style chunks
+- `css/`: CSS rule chunks
+- `other/`: Readable files that do not have a dedicated parser
+- `remaining/`: Overflow chunks once grouped outputs reach the word limit
+- `metadata.json`: Summary of processed files
+- `hashes.json`: MD5 hashes used for incremental processing
+
+## NotebookLM Workflow
+
+1. Run Pyragify on the repository you care about.
+2. Upload one or more generated `.txt` chunks to a NotebookLM notebook.
+3. Ask questions about the codebase and use the generated citations to trace answers back to the source text.
+
+![code_chat](chat_code_base.png "Chat with your code base")
+
+## Development
+
+Set up the local environment:
+
+```bash
+uv sync --group dev
+```
+
+Run the test suite:
+
+```bash
+uv run pytest
+```
+
+Run a focused test slice while iterating:
+
+```bash
+uv run pytest tests/test_processor.py -k markdown
+```
+
+## Contributing
+
+Contributions are welcome. Open an issue for bugs or feature requests, then send a pull request with focused changes and matching tests.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
