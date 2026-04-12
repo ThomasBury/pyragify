@@ -1,0 +1,89 @@
+# Project information
+site_name: pyragify
+site_description: "A tool for processing code repositories into semantic chunks for analysis with LLMs."
+site_author: ThomasBury
+repo_url: https://github.com/ThomasBury/pyragify
+repo_name: ThomasBury/pyragify
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2025 Thomas Bury
+
+# Theme
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
+      primary: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  icon:
+    logo: material/robot
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - scripts/gen_ref_pages.py
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+            show_source: true
+            show_root_heading: true
+            merge_init_into_class: true
+          paths: [src]
+  - mermaid2
+  - minify 
+  - literate-nav
+  
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quick-start.md
+      - Configuration: getting-started/configuration.md
+  - User Guide:
+      - CLI Reference: user-guide/cli-reference.md
+      - Knowledge Graph: user-guide/knowledge-graph.md
+      - Supported Languages: user-guide/supported-languages.md
+      - Output Formats: user-guide/output-formats.md
+  - API Reference:
+      - "pyragify package": reference/pyragify/index.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ThomasBury/pyragify
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pyragify/
+
+  generator: false
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
