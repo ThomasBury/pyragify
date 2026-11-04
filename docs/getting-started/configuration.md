@@ -28,6 +28,45 @@ graph:
   compression: true
 ```
 
+## Safe paths and export failures
+
+Use dedicated output directories. Text output and graph output must not equal or
+contain the source repository. Output paths and artifact destinations containing
+symlinks are rejected. Relative graph output paths are resolved under
+`output_dir`; an absolute graph output path is used directly. Both locations are
+excluded from source discovery.
+
+In a Git working tree, discovery uses Git's tracked and untracked file list with
+standard ignore rules. Nested `.gitignore` rules, configured skip patterns,
+root `.dockerignore`, size limits, and binary filtering also apply. File and
+directory symlinks are excluded. Git submodules and nested untracked repositories
+are not recursively exported.
+
+Without Git discovery, Pyragify walks directories without following symlinks,
+honors root and nested `.gitignore` files, and prunes ignored directories before
+reading their children. Git global ignores and `.git/info/exclude` are not used
+in this fallback. Pruned directories are recorded as directory exclusions rather
+than a list of every file beneath them. Git-ignored files are omitted by Git
+before metadata is assembled, so metadata is not a complete exclusion inventory.
+These filters are not a secret scanner; inspect exports before sharing them.
+
+Replacement text, graph, metadata, hashes, and cache files are prepared before
+publication. Serialization or write errors fail the command; ordinary publication
+errors restore previous artifact contents. Source read/worker failures are
+reported separately from exclusions and abort publication. A missing or invalid
+optional cache triggers processing again; malformed graph query inputs fail.
+
+`.pyragify-artifacts.json` records owned text chunks. Only previously listed
+chunks are removed when obsolete. Old exports without this list may leave stale
+chunks; inspect those files and remove them manually. Current chunk names and
+standard JSON artifact names are reserved for Pyragify in the output directories.
+Keep unrelated files elsewhere. Do not run concurrent exports into the same
+output directories. Rollback handles raised errors, not process termination or
+power loss during publication.
+
+The graph remains experimental: these safety guarantees do not establish correct
+relationships or complete source extraction. Those are later plan milestones.
+
 ## Core Configuration Options
 
 ### Repository Settings
@@ -272,11 +311,11 @@ graph:
 
 ### Incremental Processing
 
-Pyragify automatically handles incremental processing using file hashes. To force reprocessing:
+Pyragify automatically handles incremental processing using a versioned per-file cache. To force reprocessing:
 
 ```bash
-# Delete hashes to force full reprocessing
-rm output/hashes.json
+# Delete the incremental cache to force full reprocessing
+rm output/.pyragify-cache.json
 
 # Then run pyragify
 pyragify --config-file config.yaml

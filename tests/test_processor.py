@@ -53,6 +53,23 @@ const arrow = (x) => x * 3;
     return file_path
 
 @pytest.fixture
+def sample_ts_file(tmp_path):
+    """Fixture for a sample TypeScript file."""
+    file_path = tmp_path / "sample.ts"
+    file_path.write_text("""
+function testFunction(param: number): number {
+    return param * 2;
+}
+
+class TestClass {
+    value: number = 1;
+}
+
+const arrow = (x: number): number => x * 3;
+""")
+    return file_path
+
+@pytest.fixture
 def sample_java_file(tmp_path):
     """Fixture for a sample Java file."""
     file_path = tmp_path / "Sample.java"
@@ -74,6 +91,17 @@ struct TestStruct {
     int x;
 };
 
+int testFunction(int param) {
+    return param * 2;
+}
+""")
+    return file_path
+
+@pytest.fixture
+def sample_c_file(tmp_path):
+    """Fixture for a sample C file."""
+    file_path = tmp_path / "sample.c"
+    file_path.write_text("""
 int testFunction(int param) {
     return param * 2;
 }
@@ -190,9 +218,11 @@ class TestFileProcessor:
         assert chunks[1]["name"] == "Guide > Usage"
 
     @pytest.mark.parametrize("file_fixture, suffix, expected_types", [
-        ("sample_js_file", ".js", ["file"]),  # Tree-sitter has version compatibility issues
-        ("sample_java_file", ".java", ["file"]),  # Tree-sitter has version compatibility issues
-        ("sample_cpp_file", ".cpp", ["file"]),  # Tree-sitter has version compatibility issues
+        ("sample_js_file", ".js", ["javascript_function", "javascript_class", "javascript_arrow_function"]),
+        ("sample_ts_file", ".ts", ["javascript_function", "javascript_class", "javascript_arrow_function"]),
+        ("sample_java_file", ".java", ["java_method", "java_class"]),
+        ("sample_c_file", ".c", ["cpp_function"]),
+        ("sample_cpp_file", ".cpp", ["cpp_function", "cpp_struct"]),
         ("sample_html_file", ".html", ["html_script", "html_style"]),
         ("sample_css_file", ".css", ["css_rule"]),
     ])
@@ -207,6 +237,8 @@ class TestFileProcessor:
         found_types = {c["type"] for c in chunks}
         for expected_type in expected_types:
             assert expected_type in found_types
+        if suffix in {".js", ".ts", ".java", ".c", ".cpp"}:
+            assert not any(c["type"] == "file" and "content" in c for c in chunks)
 
     def test_chunk_file_routing(self, sample_python_file, sample_markdown_file, sample_js_file, tmp_path):
         """Test chunk_file routes to correct method."""
@@ -217,7 +249,7 @@ class TestFileProcessor:
         md_chunks, _ = processor.chunk_file(sample_markdown_file)
         assert "header" in md_chunks[0]
         js_chunks, _ = processor.chunk_file(sample_js_file)
-        assert any(c["type"] == "file" for c in js_chunks)  # Tree-sitter fallback
+        assert any(c["type"] == "javascript_function" for c in js_chunks)
 
     def test_format_chunk(self):
         """Test formatting various chunk types."""

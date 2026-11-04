@@ -1,6 +1,7 @@
 import typer
 import logging
 from pathlib import Path
+from typing import Any
 from omegaconf import OmegaConf
 from pyragify.processor import RepoContentProcessor, load_json
 
@@ -13,6 +14,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="A tool to process repositories and output text files for NotebookLM.")
+
+
+def _config_value(config: Any, key: str, default: Any = None) -> Any:
+    return config[key] if key in config else default
+
+
+def _plain_dict(config: Any) -> dict[str, Any]:
+    if config is None:
+        return {}
+    if OmegaConf.is_config(config):
+        config = OmegaConf.to_container(config, resolve=True)
+    return dict(config)
+
 
 @app.command()
 def process_repo(
@@ -111,34 +125,40 @@ def process_repo(
         if value is not None:
             config["graph"][key] = value
 
-    if config.verbose:
+    if _config_value(config, "verbose", False):
         logger.setLevel(logging.DEBUG)
         logger.debug("Verbose mode enabled. Setting logging level to DEBUG.")
 
     # Validate repo_path after config is loaded and merged
-    if "repo_path" not in config or not config.repo_path:
+    resolved_repo_path = _config_value(config, "repo_path")
+    if not resolved_repo_path:
         typer.echo("Error: repo_path must be defined in the config file or via --repo-path.", err=True)
         raise typer.Exit(code=1)
 
-    repo_path_obj = Path(config.repo_path)
+    repo_path_obj = Path(resolved_repo_path)
     if not repo_path_obj.exists():
-        typer.echo(f"Error: Repository path '{config.repo_path}' does not exist.", err=True)
+        typer.echo(f"Error: Repository path '{resolved_repo_path}' does not exist.", err=True)
         raise typer.Exit(code=1)
     if not repo_path_obj.is_dir():
-        typer.echo(f"Error: Repository path '{config.repo_path}' is not a directory.", err=True)
+        typer.echo(f"Error: Repository path '{resolved_repo_path}' is not a directory.", err=True)
         raise typer.Exit(code=1)
+
+    graph_config = _plain_dict(_config_value(config, "graph", {}))
+
+    processor_kwargs = {
+        "repo_path": repo_path_obj,
+        "output_dir": Path(_config_value(config, "output_dir", "./output") or "./output"),
+        "enable_graph": graph_config.get("enabled", False),
+        "graph_config": graph_config,
+    }
+    for key in ("max_words", "max_file_size", "skip_patterns", "skip_dirs"):
+        value = _config_value(config, key)
+        if value is not None:
+            processor_kwargs[key] = value
+
     # Initialize and run the processor
     try:
-        processor = RepoContentProcessor(
-            repo_path=repo_path_obj,
-            output_dir=Path(config.output_dir),
-            max_words=config.max_words,
-            max_file_size=config.max_file_size,
-            skip_patterns=config.skip_patterns,
-            skip_dirs=config.skip_dirs,
-            enable_graph=config.get("graph", {}).get("enabled", False),
-            graph_config=config.get("graph", {})
-        )
+        processor = RepoContentProcessor(**processor_kwargs)
         processor.process_repo()
         logger.info("Repository processing completed successfully!")
     except Exception as e:

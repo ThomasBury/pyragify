@@ -32,7 +32,7 @@ def test_process_repo_respects_skip_dirs(tmp_path):
 
     assert "kept.py" in processed_paths
     assert "skipme/ignored.py" not in processed_paths
-    assert "skipme/ignored.py" in skipped_paths
+    assert "skipme" in skipped_paths
 
 
 def test_process_repo_skips_images_by_default(tmp_path):
@@ -69,6 +69,104 @@ def test_chunk_buffers_stay_in_their_own_subdirs(tmp_path):
 
     assert "File: doc.md" in markdown_output
     assert "File: code.py" in python_output
+
+
+def test_incremental_processing_keeps_unchanged_files_in_output(tmp_path):
+    (tmp_path / "a.py").write_text("def keep():\n    return 'a'\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("def change():\n    return 'old'\n", encoding="utf-8")
+
+    output_dir = tmp_path / "output"
+    RepoContentProcessor(tmp_path, output_dir).process_repo()
+
+    (tmp_path / "b.py").write_text("def change():\n    return 'new'\n", encoding="utf-8")
+    RepoContentProcessor(tmp_path, output_dir).process_repo()
+
+    output = (output_dir / "python" / "chunk_0.txt").read_text(encoding="utf-8")
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+    skipped = {entry["path"]: entry["reason"] for entry in metadata["skipped_files"]}
+
+    assert "File: a.py" in output
+    assert "return 'a'" in output
+    assert "File: b.py" in output
+    assert "return 'new'" in output
+    assert "return 'old'" not in output
+    assert {entry["path"] for entry in metadata["processed_files"]} == {"a.py", "b.py"}
+    assert skipped["a.py"] == "Unchanged file (hash match)"
+
+
+def test_deleting_file_cache_forces_reprocessing(tmp_path):
+    (tmp_path / "a.py").write_text("def keep():\n    return 'a'\n", encoding="utf-8")
+
+    output_dir = tmp_path / "output"
+    RepoContentProcessor(tmp_path, output_dir).process_repo()
+    (output_dir / ".pyragify-cache.json").unlink()
+
+    RepoContentProcessor(tmp_path, output_dir).process_repo()
+
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert {entry["path"] for entry in metadata["processed_files"]} == {"a.py"}
+    assert "a.py" not in {entry["path"] for entry in metadata["skipped_files"]}
+
+
+def test_incremental_processing_drops_deleted_files(tmp_path):
+    (tmp_path / "a.py").write_text("def removed():\n    return 'a'\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("def kept():\n    return 'b'\n", encoding="utf-8")
+
+    output_dir = tmp_path / "output"
+    RepoContentProcessor(tmp_path, output_dir).process_repo()
+
+    (tmp_path / "a.py").unlink()
+    RepoContentProcessor(tmp_path, output_dir).process_repo()
+
+    output = (output_dir / "python" / "chunk_0.txt").read_text(encoding="utf-8")
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+    hashes = json.loads((output_dir / "hashes.json").read_text(encoding="utf-8"))
+    cache = json.loads((output_dir / ".pyragify-cache.json").read_text(encoding="utf-8"))
+
+    assert "File: a.py" not in output
+    assert "File: b.py" in output
+    assert {entry["path"] for entry in metadata["processed_files"]} == {"b.py"}
+    assert "a.py" not in hashes
+    assert "a.py" not in cache["files"]
+
+
+def test_process_repo_ignores_output_dir_artifacts(tmp_path):
+    output_dir = tmp_path / "output"
+    (output_dir / "python").mkdir(parents=True)
+    (output_dir / "python" / "chunk_0.txt").write_text(
+        "---\nFile: output/python/chunk_0.txt\n---\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "app.py").write_text("def app():\n    return 1\n", encoding="utf-8")
+
+    RepoContentProcessor(tmp_path, output_dir).process_repo()
+
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+    output = (output_dir / "python" / "chunk_0.txt").read_text(encoding="utf-8")
+
+    assert {entry["path"] for entry in metadata["processed_files"]} == {"app.py"}
+    assert all(not entry["path"].startswith("output/") for entry in metadata["processed_files"])
+    assert "File: app.py" in output
+    assert "output/python/chunk_0.txt" not in output
+
+
+def test_incremental_graph_rebuild_keeps_cached_unchanged_file_nodes(tmp_path):
+    (tmp_path / "a.py").write_text("def stable():\n    return 'a'\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("def changed():\n    return 'old'\n", encoding="utf-8")
+
+    output_dir = tmp_path / "output"
+    RepoContentProcessor(tmp_path, output_dir, enable_graph=True).process_repo()
+
+    (tmp_path / "b.py").write_text("def changed():\n    return 'new'\n", encoding="utf-8")
+    RepoContentProcessor(tmp_path, output_dir, enable_graph=True).process_repo()
+
+    graph = json.loads((output_dir / "graphs" / "repository_graph.json").read_text(encoding="utf-8"))
+
+    assert "file::a.py" in graph["nodes"]
+    assert "file::b.py" in graph["nodes"]
+    assert any(node["file"] == "a.py" and node["name"] == "stable" for node in graph["nodes"].values())
+    assert any(node["file"] == "b.py" and node["name"] == "changed" for node in graph["nodes"].values())
 
 
 def test_graph_output_keeps_dependency_edges_and_metadata(tmp_path):

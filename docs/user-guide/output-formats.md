@@ -10,7 +10,8 @@ After processing, Pyragify creates this output structure:
 output/
 ├── graphs/                    # Knowledge graph files
 │   └── repository_graph.json
-├── hashes.json               # File hash cache
+├── .pyragify-cache.json       # Incremental processing cache
+├── hashes.json               # Current file hashes
 ├── metadata.json             # Processing metadata
 ├── python/                   # Python code chunks
 │   ├── chunk_0.txt
@@ -149,9 +150,13 @@ Contains comprehensive information about the processing run:
 }
 ```
 
+### .pyragify-cache.json
+
+Stores the versioned per-file chunks, metadata, graph data, and hashes used for incremental processing.
+
 ### hashes.json
 
-Tracks file hashes for incremental processing:
+Tracks the current source file hashes for inspection:
 
 ```json
 {
@@ -345,11 +350,11 @@ max_words: 50000   # Smaller chunks for precision
 
 ### Incremental Updates
 
-Pyragify uses file hashing to avoid reprocessing:
+Pyragify uses a versioned per-file cache to avoid reprocessing unchanged source files:
 
 ```bash
 # Force reprocessing
-rm output/hashes.json
+rm output/.pyragify-cache.json
 pyragify --config-file config.yaml
 
 # Check what changed

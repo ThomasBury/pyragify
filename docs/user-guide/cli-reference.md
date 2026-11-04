@@ -571,11 +571,11 @@ pyragify query-graph --command related --entity "src/main.py::function_name"
 
 **Problem**: Files not reprocessing when changed
 ```bash
-# Force reprocessing
-rm output/hashes.json
+# Check file modification times against the incremental cache
+find . -name "*.py" -newer output/.pyragify-cache.json
 
-# Check file modification times
-find . -name "*.py" -newer output/hashes.json
+# Force reprocessing
+rm output/.pyragify-cache.json
 ```
 
 ## Advanced Usage

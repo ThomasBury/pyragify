@@ -5,6 +5,10 @@ import re
 import tokenize
 import pathspec
 import logging
+import os
+import shutil
+import subprocess
+import tempfile
 from io import StringIO
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
@@ -12,17 +16,18 @@ from os import cpu_count
 from collections import defaultdict
 from typing import Optional, Dict, Any, Tuple, List, Union
 from pyragify.utils import validate_directory
-from pyragify.graph import GraphBuilder, KnowledgeGraph
+from pyragify.graph import (
+    GraphBuilder,
+    KnowledgeGraph,
+    TREE_SITTER_AVAILABLE,
+    get_tree_sitter_language_and_parser,
+    tree_sitter_match_captures,
+)
 
-# Tree-sitter imports (conditionally imported)
-# Note: Tree-sitter has version compatibility issues with current versions
-# TODO: Fix tree-sitter version compatibility for proper JS/TS/Java/C++ parsing
+# Tree-sitter imports (conditionally imported for type hinting)
 try:
-    from tree_sitter import Language, Node, Parser
-    from tree_sitter_languages import get_language
-    TREE_SITTER_AVAILABLE = True
+    from tree_sitter import Language, Node
 except ImportError:
-    TREE_SITTER_AVAILABLE = False
     # Define dummy types for type hinting if tree-sitter is not available
     class Language: pass
     class Node: pass
@@ -33,34 +38,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def save_json(data: dict, file_path: Path, description: str):
-    """
-    Save a dictionary to a JSON file with error handling.
-
-    Parameters
-    ----------
-    data : dict
-        The data to be saved as a JSON file.
-    file_path : pathlib.Path
-        The path where the JSON file should be saved.
-    description : str
-        A description of the file being saved, used in logging messages.
-
-    Raises
-    ------
-    Exception
-        If an error occurs during saving, it will be logged but not raised.
-
-    Notes
-    -----
-    This function logs both successful saves and any errors encountered.
-    """
-
+    """Atomically save JSON; serialization and filesystem errors propagate."""
+    temporary = None
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=file_path.parent,
+                                         delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(data, stream, indent=4)
+        os.replace(temporary, file_path)
         logger.info(f"{description} saved to {file_path}")
-    except Exception as e:
-        logger.error(f"Error saving {description}: {e}")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 def compute_file_hash(file_path: Path) -> str:
     """
@@ -97,34 +86,12 @@ def compute_file_hash(file_path: Path) -> str:
     return hash_md5.hexdigest()
 
 def load_json(file_path: Path, description: str) -> dict:
-    """
-    Load a JSON file into a dictionary with error handling.
-
-    Parameters
-    ----------
-    file_path : pathlib.Path
-        The path to the JSON file to be loaded.
-    description : str
-        A description of the file being loaded, used in logging messages.
-
-    Returns
-    -------
-    dict
-        The contents of the JSON file as a dictionary. Returns an empty dictionary if the file cannot be loaded.
-
-    Raises
-    ------
-    Exception
-        If an error occurs during file loading, it will be logged but not raised.
-    """
-
-    if file_path.exists():
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading {description}: {e}")
-    return {}
+    """Load a required JSON object; invalid or missing inputs raise an error."""
+    with file_path.open(encoding="utf-8") as stream:
+        data = json.load(stream)
+    if not isinstance(data, dict):
+        raise ValueError(f"{description} must contain a JSON object")
+    return data
 
 def is_documentation_file(file_path: Path) -> bool:
     """
@@ -173,6 +140,10 @@ DEFAULT_SKIP_PATTERNS = [
     "*.ico",
     "*.svg",
 ]
+
+CACHE_VERSION = 1
+CACHE_FILENAME = ".pyragify-cache.json"
+MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
 
 MARKDOWN_HEADER_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 MARKDOWN_FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -258,7 +229,7 @@ def _process_file_worker(task_args: tuple[str, str, str, bool, Optional[Dict[str
         file_processor = FileProcessor(repo_path, output_dir, enable_graph=enable_graph, graph_config=graph_config)
         chunks, line_count, graph = file_processor.chunk_file(file_path, include_graph=True)
 
-        if not chunks and line_count == 0:  # Indicates a read error in chunk_file
+        if not chunks and line_count == 0 and file_path.stat().st_size:  # Empty files are valid.
             logger.warning(f"Worker failed to chunk file {file_path}")
             return None
 
@@ -641,8 +612,7 @@ class FileProcessor:
         try:
             query = language.query(query_str)
             for match in query.matches(root_node):
-                # A match is a list of (capture_index, node) tuples
-                match_captures = {query.capture_names[c_id]: node for c_id, node in match}
+                match_captures = tree_sitter_match_captures(query, match)
 
                 name_node = match_captures.get('name')
                 name = name_node.text.decode('utf8') if name_node else "anonymous"
@@ -694,17 +664,16 @@ class FileProcessor:
             # Try tree-sitter parsing first
             if TREE_SITTER_AVAILABLE:
                 try:
-                    language = get_language(lang_name)
-                    parser = Parser()
-                    parser.set_language(language)
+                    language, parser = get_tree_sitter_language_and_parser(lang_name)
                     tree = parser.parse(bytes(source, "utf8"))
                     root_node = tree.root_node
 
                     if lang_name in ["javascript", "typescript"]:
                         chunks.extend(self._query_tree_sitter(language, root_node, source,
                             "(function_declaration name: (identifier) @name) @function_declaration", "javascript_function"))
+                        class_name_type = "type_identifier" if lang_name == "typescript" else "identifier"
                         chunks.extend(self._query_tree_sitter(language, root_node, source,
-                            "(class_declaration name: (identifier) @name) @class_declaration", "javascript_class"))
+                            f"(class_declaration name: ({class_name_type}) @name) @class_declaration", "javascript_class"))
                         chunks.extend(self._query_tree_sitter(language, root_node, source,
                             "(arrow_function) @arrow_function", "javascript_arrow_function"))
 
@@ -808,7 +777,7 @@ class RepoContentProcessor:
     content : str
         The current content being accumulated for a chunk.
     hashes : dict
-        Cached file hashes to avoid reprocessing unchanged files.
+        Current source file hashes saved for inspection.
     file_counter : collections.defaultdict
         Counter for output files by type.
     metadata : dict
@@ -817,7 +786,7 @@ class RepoContentProcessor:
     Methods
     -------
     load_ignore_patterns()
-        Load ignore patterns from .gitignore and .dockerignore files.
+        Load root .dockerignore and configured skip patterns.
     should_skip(file_path)
         Determine if a file or directory should be skipped.
     save_chunk(chunk, subdir)
@@ -834,7 +803,12 @@ class RepoContentProcessor:
 
     def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None, enable_graph: bool = False, graph_config: Optional[Dict[str, Any]] = None):
         self.repo_path = repo_path.resolve()
-        self.output_dir = output_dir.resolve()
+        self.output_dir = self._validate_output_path(output_dir)
+        self.graph_config = graph_config or {}
+        self.graph_output_dir = self._validate_output_path(
+            self.output_dir / self.graph_config.get("output_dir", "graphs")
+        ) if enable_graph else None
+        self._gitignore_specs = {}
         self.max_words = max_words
         self.max_file_size = max_file_size
         self.skip_patterns = list(dict.fromkeys(DEFAULT_SKIP_PATTERNS + (skip_patterns or [])))
@@ -842,13 +816,18 @@ class RepoContentProcessor:
         self.ignore_patterns = self.load_ignore_patterns()
         self.current_word_counts = defaultdict(int)
         self.content_buffers = defaultdict(str)
-        self.hashes = load_json(self.output_dir / "hashes.json", "hashes")
+        self.hashes = {}
+        self.cache_path = self.output_dir / CACHE_FILENAME
+        self._reject_symlinks(self.cache_path)
+        try:
+            self.file_cache = load_json(self.cache_path, "File cache")
+        except FileNotFoundError:
+            self.file_cache = {}
+        except (OSError, ValueError):
+            logger.warning("Invalid optional cache; processing source again")
+            self.file_cache = {}
         self.file_counter = defaultdict(int)
-        self.metadata = {
-            "processed_files": [],
-            "skipped_files": [],
-            "summary": {"total_files_processed": 0, "total_words": 0}
-        }
+        self.metadata = self._empty_metadata()
 
         # Graph-related attributes
         self.enable_graph = enable_graph
@@ -865,9 +844,215 @@ class RepoContentProcessor:
 
         validate_directory(self.output_dir)
 
+    @staticmethod
+    def _empty_metadata() -> dict:
+        return {
+            "processed_files": [],
+            "skipped_files": [],
+            "failed_files": [],
+            "summary": {"total_files_processed": 0, "total_words": 0}
+        }
+
+    def _reset_run_state(self) -> None:
+        self.current_word_counts = defaultdict(int)
+        self.content_buffers = defaultdict(str)
+        self.file_counter = defaultdict(int)
+        self.metadata = self._empty_metadata()
+        self.all_file_graphs = []
+        if self.enable_graph:
+            self.repo_graph = KnowledgeGraph()
+
+    def _cache_files(self) -> dict:
+        if self.file_cache.get("version") != CACHE_VERSION:
+            return {}
+        files = self.file_cache.get("files", {})
+        return files if isinstance(files, dict) else {}
+
+    def _is_cache_record_usable(self, record: dict, current_hash: str, relative_path: str) -> bool:
+        if not isinstance(record, dict):
+            return False
+        if record.get("hash") != current_hash:
+            return False
+
+        metadata = record.get("metadata")
+        if not isinstance(metadata, dict) or metadata.get("path") != relative_path:
+            return False
+        if not isinstance(record.get("chunks"), list):
+            return False
+        if self.enable_graph and record["chunks"]:
+            try:
+                KnowledgeGraph.from_dict(record.get("graph"))
+            except (TypeError, ValueError, AttributeError):
+                return False
+        return True
+
+    @staticmethod
+    def _reject_symlinks(path: Path) -> None:
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            raise ValueError(f"Symlinked output paths are unsafe: {path}")
+
+    def _validate_output_path(self, path: Path) -> Path:
+        path = Path(os.path.abspath(path))
+        self._reject_symlinks(path)
+        if path == self.repo_path or path in self.repo_path.parents:
+            raise ValueError("Output must not equal or contain the source repository")
+        return path
+
+    def _is_inside_output_dir(self, file_path: Path) -> bool:
+        return any(root == file_path or root in file_path.parents
+                   for root in (self.output_dir, self.graph_output_dir) if root is not None)
+
+    def _discover_files(self):
+        try:
+            git = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse",
+                                  "--is-inside-work-tree"], capture_output=True)
+        except FileNotFoundError:
+            git = None
+        if git is not None and git.returncode == 0 and git.stdout.strip() == b"true":
+            result = subprocess.run(
+                ["git", "-C", str(self.repo_path), "ls-files", "--cached", "--others",
+                 "--exclude-standard", "-z"], capture_output=True, check=True)
+            for name in sorted(set(result.stdout.split(b"\0")) - {b""}):
+                yield self.repo_path / os.fsdecode(name)
+            return
+
+        def walk_error(error):
+            raise error
+
+        for directory, dirs, files in os.walk(self.repo_path, followlinks=False, onerror=walk_error):
+            root = Path(directory)
+            kept = []
+            for name in sorted(dirs):
+                path = root / name
+                if self._is_inside_output_dir(path):
+                    continue
+                if self.should_skip(path):
+                    self.metadata["skipped_files"].append({
+                        "path": str(path.relative_to(self.repo_path)), "reason": "Excluded directory"})
+                else:
+                    kept.append(name)
+            dirs[:] = kept
+            for name in sorted(files):
+                yield root / name
+
+    def _matches_gitignore(self, path: Path) -> bool:
+        ignored = False
+        for directory in reversed((path.parent, *path.parent.parents)):
+            if directory != self.repo_path and self.repo_path not in directory.parents:
+                continue
+            if directory not in self._gitignore_specs:
+                ignore = directory / ".gitignore"
+                self._gitignore_specs[directory] = pathspec.PathSpec.from_lines(
+                    "gitwildmatch", ignore.read_text(encoding="utf-8").splitlines()
+                    if ignore.is_file() and not ignore.is_symlink() else [])
+            relative = path.relative_to(directory).as_posix() + ("/" if path.is_dir() else "")
+            for pattern in self._gitignore_specs[directory].patterns:
+                if pattern.include is not None and pattern.match_file(relative):
+                    ignored = pattern.include
+        return ignored
+
+    def _publish_output(self, stage: Path) -> None:
+        """Publish prepared artifacts, restoring previous files on a write failure."""
+        manifest_path = self.output_dir / ".pyragify-artifacts.json"
+        self._reject_symlinks(manifest_path)
+        previous = load_json(manifest_path, "Artifact list") if manifest_path.exists() else {}
+        old_chunks = previous.get("chunks", [])
+        if not isinstance(old_chunks, list) or any(
+            not isinstance(name, str) or not re.fullmatch(
+                r"(?:" + "|".join(MANAGED_OUTPUT_SUBDIRS) + r")/chunk_\d+\.txt", name)
+            for name in old_chunks
+        ):
+            raise ValueError("Invalid owned artifact list")
+        chunks = sorted(str(path.relative_to(stage)) for path in stage.glob("*/chunk_*.txt"))
+        save_json({"chunks": chunks}, stage / manifest_path.name, "Artifact list")
+        replacements = {self.output_dir / path.relative_to(stage): path
+                        for path in stage.rglob("*") if path.is_file()}
+        if self.enable_graph:
+            del replacements[self.output_dir / "repository_graph.json"]
+            replacements[self.graph_output_dir / "repository_graph.json"] = stage / "repository_graph.json"
+        destinations = set(replacements) | {self.output_dir / name for name in old_chunks}
+        for destination in destinations:
+            self._reject_symlinks(destination)
+            if destination.exists() and not destination.is_file():
+                raise ValueError(f"Artifact destination is not a file: {destination}")
+        # shortcut: rollback covers raised errors, add a journal before supporting crash recovery.
+        backups = {}
+        published = []
+        try:
+            for destination in sorted(destinations):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists():
+                    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
+                        backup = Path(stream.name)
+                    backups[destination] = backup
+                    shutil.copy2(destination, backup)
+                else:
+                    backups[destination] = None
+                if destination in replacements:
+                    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
+                        temporary = Path(stream.name)
+                    try:
+                        shutil.copyfile(replacements[destination], temporary)
+                        os.replace(temporary, destination)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+                else:
+                    destination.unlink()
+                published.append(destination)
+        except Exception:
+            for destination in reversed(published):
+                backup = backups[destination]
+                if backup is None:
+                    destination.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, destination)
+            raise
+        finally:
+            for backup in backups.values():
+                if backup is not None:
+                    backup.unlink(missing_ok=True)
+
+    def _record_processed_metadata(self, active_records: dict[str, dict]) -> None:
+        processed_files = []
+        total_words = 0
+
+        for relative_path in sorted(active_records):
+            metadata = active_records[relative_path]["metadata"]
+            processed_files.append(metadata)
+            total_words += metadata.get("words", 0)
+
+        self.metadata["processed_files"] = processed_files
+        self.metadata["summary"] = {
+            "total_files_processed": len(processed_files),
+            "total_words": total_words,
+        }
+
+    def _write_text_output(self, active_records: dict[str, dict]) -> None:
+        for relative_path in sorted(active_records):
+            record = active_records[relative_path]
+            subdir = self.get_file_type_subdir(Path(relative_path))
+            for chunk in record["chunks"]:
+                self.save_chunk(chunk, subdir, relative_path)
+
+        for subdir in list(self.content_buffers.keys()):
+            self.save_content(subdir)
+
+    def _rebuild_graph_from_records(self, active_records: dict[str, dict]) -> None:
+        if not self.enable_graph or not self.repo_graph:
+            return
+
+        for relative_path in sorted(active_records):
+            graph_dict = active_records[relative_path].get("graph")
+            if not graph_dict:
+                continue
+            file_graph = KnowledgeGraph.from_dict(graph_dict)
+            self.all_file_graphs.append(file_graph)
+            self.repo_graph.merge(file_graph)
+            logger.debug(f"Merged cached graph for {relative_path} into repository graph")
+
     def load_ignore_patterns(self) -> pathspec.PathSpec:
         """
-        Load patterns from .gitignore and .dockerignore files if they exist.
+        Load root .dockerignore and configured skip patterns.
 
         Returns
         -------
@@ -882,9 +1067,9 @@ class RepoContentProcessor:
 
         ignore_patterns = []
 
-        for ignore_file in [".gitignore", ".dockerignore"]:
+        for ignore_file in [".dockerignore"]:
             file_path = self.repo_path / ignore_file
-            if file_path.exists():
+            if file_path.exists() and not file_path.is_symlink():
                 logger.info(f"Loading ignore patterns from {ignore_file}")
                 with open(file_path, "r", encoding="utf-8") as f:
                     ignore_patterns.extend(f.readlines())
@@ -915,6 +1100,10 @@ class RepoContentProcessor:
         """
 
         relative_path = file_path.relative_to(self.repo_path)
+        if any(part.is_symlink() for part in (file_path, *file_path.parents)):
+            return True
+        if self._matches_gitignore(file_path):
+            return True
 
         # Skip files contained in explicitly skipped directories.
         if any(part in self.skip_dirs for part in relative_path.parts[:-1]):
@@ -922,7 +1111,7 @@ class RepoContentProcessor:
             return True
 
         # Check if the path matches .gitignore or .dockerignore patterns
-        if self.ignore_patterns.match_file(str(relative_path)):
+        if self.ignore_patterns.match_file(relative_path.as_posix() + ("/" if file_path.is_dir() else "")):
             logger.debug(f"Skipping {relative_path} due to ignore pattern.")
             return True
 
@@ -1017,17 +1206,25 @@ class RepoContentProcessor:
         """
         Process all files in the repository in parallel.
 
-        This method iterates over all files, filters out skipped and unchanged files,
-        and then processes the remaining files in parallel using a process pool.
-        Results are aggregated and saved to the output directory.
+        The per-file cache avoids re-chunking unchanged files, but output is
+        always rebuilt from the complete cached model so incremental runs do
+        not drop unchanged files from the generated model.
         """
         logger.info(f"Processing repository: {self.repo_path}")
+        self._reset_run_state()
+        self._gitignore_specs.clear()
 
-        # 1. Discover and filter files to process
+        # 1. Discover files and decide which ones need fresh processing.
         logger.info("Discovering and filtering files...")
+        active_records = {}
+        cache_files = self._cache_files()
         files_to_process = []
-        for file_path in self.repo_path.rglob("*"):
-            if not file_path.is_file():
+
+        for file_path in self._discover_files():
+            if not file_path.is_symlink() and not file_path.is_file():
+                continue
+            if self._is_inside_output_dir(file_path):
+                logger.debug(f"Skipped generated output artifact: {file_path}")
                 continue
             if self.should_skip(file_path):
                 relative_path = str(file_path.relative_to(self.repo_path))
@@ -1037,54 +1234,55 @@ class RepoContentProcessor:
 
             current_hash = compute_file_hash(file_path)
             if not current_hash:
-                self.metadata["skipped_files"].append({"path": str(file_path), "reason": "Error computing file hash"})
+                self.metadata["failed_files"].append({"path": str(file_path.relative_to(self.repo_path)), "reason": "Error computing file hash"})
                 logger.warning(f"Skipped file due to hash error: {file_path}")
                 continue
 
             relative_path = str(file_path.relative_to(self.repo_path))
-            if relative_path in self.hashes and self.hashes[relative_path] == current_hash:
+            cache_record = cache_files.get(relative_path)
+            if self._is_cache_record_usable(cache_record, current_hash, relative_path):
+                active_records[relative_path] = cache_record
                 self.metadata["skipped_files"].append({"path": relative_path, "reason": "Unchanged file (hash match)"})
-                logger.debug(f"Skipped unchanged file: {file_path}")
+                logger.debug(f"Reused cached chunks for unchanged file: {file_path}")
                 continue
-            
+
             files_to_process.append(file_path)
 
         if not files_to_process:
             logger.info("No new or modified files to process.")
         else:
             logger.info(f"Found {len(files_to_process)} new or modified files to process.")
-            # 2. Process files in parallel
+            # 2. Process new or modified files in parallel.
             tasks = [(str(fp), str(self.repo_path), str(self.output_dir), self.enable_graph, self.graph_config) for fp in files_to_process]
             with ProcessPoolExecutor(max_workers=cpu_count()) as executor:
                 results = executor.map(_process_file_worker, tasks)
                 for i, result in enumerate(results):
+                    source_path = files_to_process[i]
+                    relative_source_path = str(source_path.relative_to(self.repo_path))
                     if result is None:
-                        logger.warning(f"A worker failed to process a file.")
+                        logger.warning("A worker failed to process a file.")
+                        self.metadata["failed_files"].append({"path": relative_source_path, "reason": "Error processing file"})
                         continue
 
                     relative_path, new_hash, file_metadata, chunks, graph_dict = result
                     logger.info(f"Aggregating results for {relative_path} ({i + 1}/{len(files_to_process)})")
+                    active_records[relative_path] = {
+                        "hash": new_hash,
+                        "metadata": file_metadata,
+                        "chunks": chunks,
+                        "graph": graph_dict,
+                    }
 
-                    # 3. Aggregate results serially
-                    self.hashes[relative_path] = new_hash
-                    self.metadata["processed_files"].append(file_metadata)
-                    self.metadata["summary"]["total_files_processed"] += 1
-                    self.metadata["summary"]["total_words"] += file_metadata['words']
+        if self.metadata["failed_files"]:
+            raise RuntimeError(f"Source processing failed: {self.metadata['failed_files']}")
 
-                    # Merge graph if available
-                    if self.enable_graph and graph_dict and self.repo_graph:
-                        try:
-                            from pyragify.graph import KnowledgeGraph
-                            file_graph = KnowledgeGraph.from_dict(graph_dict)
-                            self.all_file_graphs.append(file_graph)
-                            self.repo_graph.merge(file_graph)
-                            logger.debug(f"Merged graph for {relative_path} into repository graph")
-                        except Exception as e:
-                            logger.warning(f"Failed to merge graph for {relative_path}: {e}")
-
-                    subdir = self.get_file_type_subdir(Path(self.repo_path, relative_path))
-                    for chunk in chunks:
-                        self.save_chunk(chunk, subdir, relative_path)
+        # 3. Rebuild aggregate output from every active source record.
+        self.hashes = {
+            relative_path: record["hash"]
+            for relative_path, record in sorted(active_records.items())
+        }
+        self._record_processed_metadata(active_records)
+        self._rebuild_graph_from_records(active_records)
 
         # 4. Resolve cross-file references
         if self.enable_graph and self.repo_graph and self.all_file_graphs:
@@ -1112,32 +1310,25 @@ class RepoContentProcessor:
                 logger.warning(f"Failed to resolve cross-file references: {e}")
 
         # 5. Save final state
-        for subdir in list(self.content_buffers.keys()):
-            self.save_content(subdir)
+        self.file_cache = {"version": CACHE_VERSION, "files": active_records}
 
-        # Save repository graph if enabled
-        if self.enable_graph and self.repo_graph:
+        with tempfile.TemporaryDirectory(prefix=".pyragify-stage-", dir=self.output_dir) as directory:
+            stage = Path(directory)
+            output_dir = self.output_dir
             try:
-                graph_output_dir = Path(self.graph_config.get("output_dir", "./graphs"))
-                graph_output_dir = self.output_dir / graph_output_dir
-                graph_output_dir.mkdir(parents=True, exist_ok=True)
-
-                graph_path = graph_output_dir / "repository_graph.json"
+                self.output_dir = stage
+                self._write_text_output(active_records)
+            finally:
+                self.output_dir = output_dir
+            if self.enable_graph and self.repo_graph:
                 graph_dict = self.repo_graph.to_dict()
-                with open(graph_path, 'w', encoding='utf-8') as f:
-                    json.dump(graph_dict, f, indent=2, ensure_ascii=False)
-
-                # Update metadata with graph statistics
+                save_json(graph_dict, stage / "repository_graph.json", "Repository graph")
                 self.metadata["graph"] = graph_dict["metadata"].copy()
-                self.metadata["graph"]["output_path"] = str(graph_path)
-
-                logger.info(f"Saved repository knowledge graph to {graph_path}")
-                logger.info(f"Graph contains {len(self.repo_graph.nodes)} nodes and {len(self.repo_graph.edges)} edges")
-            except Exception as e:
-                logger.error(f"Failed to save repository graph: {e}")
-
-        save_json(self.metadata, self.output_dir / "metadata.json", "Metadata")
-        save_json(self.hashes, self.output_dir / "hashes.json", "Hashes")
+                self.metadata["graph"]["output_path"] = str(self.graph_output_dir / "repository_graph.json")
+            save_json(self.metadata, stage / "metadata.json", "Metadata")
+            save_json(self.hashes, stage / "hashes.json", "Hashes")
+            save_json(self.file_cache, stage / CACHE_FILENAME, "File cache")
+            self._publish_output(stage)
 
         logger.info("Repository processing complete.")
 

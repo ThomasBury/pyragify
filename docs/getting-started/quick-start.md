@@ -118,13 +118,14 @@ You should see output like:
 Check what Pyragify created:
 
 ```bash
-# View the output directory structure
-tree output/
+# View the output directory structure, including the cache file
+tree -a output/
 
 # Should show something like:
 output/
 ├── graphs/
 │   └── repository_graph.json
+├── .pyragify-cache.json
 ├── hashes.json
 ├── metadata.json
 ├── python/

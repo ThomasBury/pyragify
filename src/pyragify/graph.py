@@ -9,6 +9,7 @@ import ast
 import json
 import logging
 import re
+import warnings
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -18,15 +19,52 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 # Tree-sitter imports (conditionally imported)
 try:
     from tree_sitter import Language, Node, Parser
-    from tree_sitter_languages import get_language
+    from tree_sitter_languages import get_language, get_parser
     TREE_SITTER_AVAILABLE = True
 except ImportError:
     TREE_SITTER_AVAILABLE = False
     # Define dummy types for type hinting if tree-sitter is not available
     class Language: pass
     class Node: pass
+    class Parser: pass
 
 logger = logging.getLogger(__name__)
+
+FUNCTION_NODE_TYPES = {
+    "function",
+    "javascript_function",
+    "javascript_arrow_function",
+    "java_method",
+    "cpp_function",
+    "go_function",
+}
+
+
+def is_function_like_node(node: "GraphNode") -> bool:
+    return node.type in FUNCTION_NODE_TYPES
+
+
+def get_tree_sitter_language_and_parser(language_name: str) -> Tuple[Language, Parser]:
+    if not TREE_SITTER_AVAILABLE:
+        raise RuntimeError("tree-sitter support is not available")
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Language\(path, name\) is deprecated.*",
+            category=FutureWarning,
+        )
+        language = get_language(language_name)
+        parser = get_parser(language_name)
+    return language, parser
+
+
+def tree_sitter_match_captures(query: Any, match: Any) -> Dict[str, Node]:
+    if isinstance(match, tuple) and len(match) == 2 and isinstance(match[1], dict):
+        return {
+            name: nodes[0] if isinstance(nodes, list) else nodes
+            for name, nodes in match[1].items()
+        }
+    return {query.capture_names[i]: node for i, node in match}
 
 
 @dataclass
@@ -154,8 +192,12 @@ class KnowledgeGraph:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'KnowledgeGraph':
         """Create graph from dictionary (deserialization)."""
+        if (not isinstance(data, dict)
+                or not isinstance(data.get("nodes"), dict)
+                or not isinstance(data.get("edges"), list)):
+            raise ValueError("Graph must contain a nodes object and an edges list")
         graph = cls()
-        graph.metadata = data.get("metadata", {})
+        graph.metadata = data.get("metadata", {}).copy()
         languages = graph.metadata.get("languages", set())
         if not isinstance(languages, set):
             graph.metadata["languages"] = set(languages or [])
@@ -274,6 +316,28 @@ class GraphBuilder:
 
         return node_id
 
+    def _find_enclosing_function_node_id(
+        self, graph: KnowledgeGraph, file_path: Path, line: Optional[int]
+    ) -> Optional[str]:
+        """Find the smallest function-like node covering a source line."""
+        if line is None:
+            return None
+
+        relative_path = self._relative_path(file_path)
+        candidates = []
+        for node_id, node in graph.nodes.items():
+            if not is_function_like_node(node) or node.file != relative_path:
+                continue
+            if node.line_start is None or node.line_end is None:
+                continue
+            if node.line_start <= line <= node.line_end:
+                span = node.line_end - node.line_start
+                candidates.append((span, -node.line_start, node_id))
+
+        if not candidates:
+            return None
+        return min(candidates)[2]
+
     def _ensure_reference_node(self, graph: KnowledgeGraph, node_id: str, language: str) -> None:
         """Create a placeholder node for an external reference when needed."""
         if node_id in graph.nodes:
@@ -312,9 +376,17 @@ class GraphBuilder:
         dependencies: List[GraphEdge],
     ) -> None:
         """Normalize dependency endpoints, materialize missing nodes, and add edges."""
+        file_node_id = self._file_node_id(file_path)
         for edge in dependencies:
-            edge.source = self._normalize_reference_id(graph, file_path, edge.source)
-            edge.target = self._normalize_reference_id(graph, file_path, edge.target)
+            source = self._normalize_reference_id(graph, file_path, edge.source)
+            target = self._normalize_reference_id(graph, file_path, edge.target)
+            if edge.type == "calls" and source == file_node_id:
+                source = self._find_enclosing_function_node_id(
+                    graph, file_path, edge.metadata.get("line")
+                ) or source
+
+            edge.source = source
+            edge.target = target
             self._ensure_reference_node(graph, edge.source, language)
             self._ensure_reference_node(graph, edge.target, language)
             graph.add_edge(edge)
@@ -389,9 +461,7 @@ class GraphBuilder:
             if TREE_SITTER_AVAILABLE:
 
                 language_name = "cpp" if file_path.suffix == ".cpp" else "c"
-                language = get_language(language_name)
-                parser = Parser()
-                parser.set_language(language)
+                language, parser = get_tree_sitter_language_and_parser(language_name)
                 tree = parser.parse(bytes(content, "utf8"))
                 root_node = tree.root_node
 
@@ -431,7 +501,7 @@ class GraphBuilder:
                     try:
                         query = language.query(query_str)
                         for match in query.matches(root_node):
-                            captures = {query.capture_names[i]: node for i, node in match}
+                            captures = tree_sitter_match_captures(query, match)
                             self._process_cpp_captures(captures, query_type, file_id, edges, content)
                     except Exception as e:
                         logger.debug(f"Tree-sitter query failed for C/C++ {query_type}: {e}")
@@ -505,9 +575,7 @@ class GraphBuilder:
         try:
             if TREE_SITTER_AVAILABLE:
 
-                language = get_language("java")
-                parser = Parser()
-                parser.set_language(language)
+                language, parser = get_tree_sitter_language_and_parser("java")
                 tree = parser.parse(bytes(content, "utf8"))
                 root_node = tree.root_node
 
@@ -522,7 +590,6 @@ class GraphBuilder:
                 method_call_query = """
                 (method_invocation
                   name: (identifier) @method_name
-                  object: (identifier) @object_name
                 )
                 """
 
@@ -544,7 +611,7 @@ class GraphBuilder:
                     try:
                         query = language.query(query_str)
                         for match in query.matches(root_node):
-                            captures = {query.capture_names[i]: node for i, node in match}
+                            captures = tree_sitter_match_captures(query, match)
                             self._process_java_captures(captures, query_type, file_id, edges, content)
                     except Exception as e:
                         logger.debug(f"Tree-sitter query failed for Java {query_type}: {e}")
@@ -569,7 +636,7 @@ class GraphBuilder:
                 type="imports",
                 metadata={"line": captures["import_path"].start_point[0] + 1}
             ))
-        elif query_type == "method_call" and "method_name" in captures and "object_name" in captures:
+        elif query_type == "method_call" and "method_name" in captures:
             method_name = content[captures["method_name"].start_byte:captures["method_name"].end_byte]
             edges.append(GraphEdge(
                 source=file_id,
@@ -632,13 +699,25 @@ class GraphBuilder:
                                 metadata={"line": node.lineno, "alias": alias.asname}
                             ))
 
-            # Extract function calls and class inheritance
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call):
+            class PythonCallVisitor(ast.NodeVisitor):
+                def __init__(self) -> None:
+                    self.function_stack: List[str] = []
+
+                def _call_source(self) -> str:
+                    if self.function_stack:
+                        return f"function::{self.function_stack[-1]}"
+                    return file_id
+
+                def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                    self.function_stack.append(node.name)
+                    self.generic_visit(node)
+                    self.function_stack.pop()
+
+                def visit_Call(self, node: ast.Call) -> None:
                     if isinstance(node.func, ast.Name):
                         func_name = node.func.id
                         edges.append(GraphEdge(
-                            source=file_id,
+                            source=self._call_source(),
                             target=f"function::{func_name}",
                             type="calls",
                             metadata={"line": node.lineno}
@@ -648,14 +727,18 @@ class GraphBuilder:
                         if isinstance(node.func.value, ast.Name):
                             method_name = node.func.attr
                             edges.append(GraphEdge(
-                                source=file_id,
+                                source=self._call_source(),
                                 target=f"method::{method_name}",
                                 type="calls",
                                 metadata={"line": node.lineno}
                             ))
+                    self.generic_visit(node)
 
-                elif isinstance(node, ast.ClassDef):
-                    # Extract class inheritance
+            PythonCallVisitor().visit(tree)
+
+            # Extract class inheritance
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
                     for base in node.bases:
                         if isinstance(base, ast.Name):
                             edges.append(GraphEdge(
@@ -682,9 +765,7 @@ class GraphBuilder:
             if TREE_SITTER_AVAILABLE:
 
                 language_name = "typescript" if file_path.suffix == ".ts" else "javascript"
-                language = get_language(language_name)
-                parser = Parser()
-                parser.set_language(language)
+                language, parser = get_tree_sitter_language_and_parser(language_name)
                 tree = parser.parse(bytes(content, "utf8"))
                 root_node = tree.root_node
 
@@ -739,7 +820,7 @@ class GraphBuilder:
                     try:
                         query = language.query(query_str)
                         for match in query.matches(root_node):
-                            captures = {query.capture_names[i]: node for i, node in match}
+                            captures = tree_sitter_match_captures(query, match)
                             self._process_js_captures(captures, query_type, file_id, edges, content)
                     except Exception as e:
                         logger.debug(f"Tree-sitter query failed for {query_type}: {e}")
@@ -1230,7 +1311,7 @@ class GraphQuery:
         # Find all function nodes with this name
         function_nodes = []
         for node in self.graph.nodes.values():
-            if node.type == "function" and node.name == function_name:
+            if is_function_like_node(node) and node.name == function_name:
                 function_nodes.append(node)
                 hierarchy["locations"].append({
                     "file": node.file,
@@ -1243,7 +1324,7 @@ class GraphQuery:
             for edge in self.graph.edges:
                 if edge.target == node.id and edge.type == "calls":
                     caller_node = self.graph.nodes.get(edge.source)
-                    if caller_node:
+                    if caller_node and is_function_like_node(caller_node):
                         hierarchy["callers"].append({
                             "name": caller_node.name,
                             "file": caller_node.file,
