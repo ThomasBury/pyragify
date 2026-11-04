@@ -169,6 +169,13 @@ M1 implementation and verification:
 
 Limits: publication rollback covers raised errors, not process termination or power loss; concurrent exports into the same directories are unsupported. Legacy unlisted chunks are left for manual inspection. File selection is not secret detection. Source completeness and graph relationship accuracy remain unresolved for M2 and finding 6.
 
+PR review follow-up (2026-11-04):
+
+- UTF-8 sampling preserves complete characters across the binary-detection boundary.
+- Graphs include empty and import-only files. Scoped entity IDs keep same-named methods and nested functions separate; unresolved receivers are left unresolved.
+- Python package dependencies use exact root or `src/` module paths, including relative imports. Cross-file edges now require explicit imports instead of matching bare symbol names.
+- Cache format version 2 invalidates older extraction records. `uv run --locked pytest -q`: **82 passed**; the documentation build also passed with the existing notices.
+
 ### M2 — One useful handoff, with a reuse decision first: next milestone
 
 First compare Repomix against this repository, one small Python application, and a mixed-language fixture containing Unicode and deliberately oversized files. Check retained source, provenance, file selection, readable navigation, and limits. Record concrete unmet requirements.

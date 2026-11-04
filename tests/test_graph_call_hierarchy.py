@@ -38,10 +38,10 @@ def _build_graph(tmp_path, filename, source):
     return graph
 
 
-def _assert_bar_calls_foo(graph, filename, call_line):
+def _assert_bar_calls_foo(graph, filename, call_line, scope=""):
     call_edges = [edge for edge in graph.edges if edge.type == "calls"]
 
-    assert any(edge.source == f"{filename}::bar" and edge.target == f"{filename}::foo" for edge in call_edges)
+    assert any(edge.source == f"{filename}::{scope}bar" and edge.target == f"{filename}::{scope}foo" for edge in call_edges)
     assert not any(edge.source == f"file::{filename}" and edge.target == f"{filename}::foo" for edge in call_edges)
 
     foo_hierarchy = GraphQuery(graph).get_call_hierarchy("foo")
@@ -98,7 +98,7 @@ def test_java_call_hierarchy_uses_calling_method_node(tmp_path):
         "}\n",
     )
 
-    _assert_bar_calls_foo(graph, "A.java", 7)
+    _assert_bar_calls_foo(graph, "A.java", 7, scope="A.")
 
 
 def test_cpp_call_hierarchy_uses_calling_function_node(tmp_path):

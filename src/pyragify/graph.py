@@ -280,7 +280,7 @@ class GraphBuilder:
         self.file_nodes[relative_path] = file_node
 
         # Process chunks and extract entities
-        for chunk in chunks:
+        for chunk in sorted(chunks, key=lambda item: item.get("start_line") or 0):
             self._process_chunk(chunk, relative_path, language, file_graph)
 
         return file_graph
@@ -294,27 +294,43 @@ class GraphBuilder:
         relative_path = file_path if isinstance(file_path, str) else self._relative_path(file_path)
         return f"file::{relative_path}"
 
-    def _lookup_local_node_id(self, graph: KnowledgeGraph, symbol_name: str) -> Optional[str]:
-        """Find a local node by symbol name within a file graph."""
-        for node_id, node in graph.nodes.items():
-            if node.type != "file" and node.name == symbol_name:
-                return node_id
-        return None
+    def _lookup_local_node_id(self, graph: KnowledgeGraph, symbol_name: str,
+                              scope: str = "", skip_classes: bool = False) -> Optional[str]:
+        """Resolve only an unambiguous definition in an enclosing scope."""
+        while True:
+            qualified = f"{scope}.{symbol_name}" if scope else symbol_name
+            matches = [node.id for node in graph.nodes.values()
+                       if node.file != "<external>" and node.type != "file"
+                       and node.metadata.get("qualified_name", node.name) == qualified]
+            if skip_classes and any(node.type == "class" and node.language == "python"
+                                    and node.metadata.get("qualified_name") == scope
+                                    for node in graph.nodes.values()):
+                matches = []
+            if matches:
+                return matches[0] if len(matches) == 1 else None
+            if not scope:
+                return None
+            scope = scope.rpartition(".")[0]
 
-    def _normalize_reference_id(self, graph: KnowledgeGraph, file_path: Path, node_id: str) -> str:
-        """Map extracted references onto existing graph node IDs when possible."""
+    def _normalize_reference_id(self, graph: KnowledgeGraph, file_path: Path,
+                                node_id: str, line: Optional[int] = None) -> str:
+        """Map references to scoped definitions, leaving unknown receivers unresolved."""
         if node_id.startswith("file::"):
             return self._file_node_id(file_path)
-
-        if node_id.startswith(("function::", "class::", "struct::")):
-            symbol_name = node_id.split("::", 1)[1]
-            return self._lookup_local_node_id(graph, symbol_name) or node_id
-
-        if node_id.startswith("method::"):
-            symbol_name = node_id.split("::", 1)[1].split(".")[-1]
-            return self._lookup_local_node_id(graph, symbol_name) or node_id
-
-        return node_id
+        if not node_id.startswith(("function::", "class::", "struct::", "method::")):
+            return node_id
+        enclosing = self._find_enclosing_function_node_id(graph, file_path, line)
+        scope = graph.nodes[enclosing].metadata.get("qualified_name", "") if enclosing else ""
+        symbol = node_id.split("::", 1)[1]
+        if node_id.startswith("method::") and "." in symbol:
+            receiver, _, name = symbol.rpartition(".")
+            if receiver in ("self", "cls", "this"):
+                scope = scope.rpartition(".")[0]
+                symbol = name
+            else:
+                scope = ""
+        return self._lookup_local_node_id(
+            graph, symbol, scope, skip_classes=not node_id.startswith("method::")) or node_id
 
     def _find_enclosing_function_node_id(
         self, graph: KnowledgeGraph, file_path: Path, line: Optional[int]
@@ -378,12 +394,11 @@ class GraphBuilder:
         """Normalize dependency endpoints, materialize missing nodes, and add edges."""
         file_node_id = self._file_node_id(file_path)
         for edge in dependencies:
-            source = self._normalize_reference_id(graph, file_path, edge.source)
-            target = self._normalize_reference_id(graph, file_path, edge.target)
-            if edge.type == "calls" and source == file_node_id:
-                source = self._find_enclosing_function_node_id(
-                    graph, file_path, edge.metadata.get("line")
-                ) or source
+            line = edge.metadata.get("line")
+            source = self._normalize_reference_id(graph, file_path, edge.source, line)
+            target = self._normalize_reference_id(graph, file_path, edge.target, line)
+            if edge.type == "calls":
+                source = self._find_enclosing_function_node_id(graph, file_path, line) or file_node_id
 
             edge.source = source
             edge.target = target
@@ -399,13 +414,25 @@ class GraphBuilder:
         start_line = chunk.get("start_line")
         end_line = chunk.get("end_line")
 
+        containers = [node for node in graph.nodes.values()
+                      if node.line_start is not None and start_line is not None
+                      and node.line_end is not None and end_line is not None
+                      and node.line_start < start_line and node.line_end >= end_line
+                      and (is_function_like_node(node) or node.type in
+                           {"class", "javascript_class", "java_class", "cpp_class", "cpp_struct"})]
+        parent = min(containers, key=lambda node: node.line_end - node.line_start) if containers else None
+        qualified = f"{parent.metadata['qualified_name']}.{name}" if parent else name
+        metadata = dict(chunk.get("metadata", {}), qualified_name=qualified)
+
         # Create node ID
         if chunk_type == "file":
             node_id = f"{file_path}::__file_content__"
             if not name:
                 name = Path(file_path).name
         else:
-            node_id = f"{file_path}::{name}" if name else f"{file_path}::{chunk_type}_{id(chunk)}"
+            node_id = f"{file_path}::{qualified}" if name else f"{file_path}::{chunk_type}_{start_line}"
+            if node_id in graph.nodes:
+                node_id += f"@{start_line}"
 
         # Create node
         node = GraphNode(
@@ -416,7 +443,7 @@ class GraphBuilder:
             line_start=start_line,
             line_end=end_line,
             language=language,
-            metadata=chunk.get("metadata", {})
+            metadata=metadata
         )
         graph.add_node(node)
 
@@ -689,15 +716,16 @@ class GraphBuilder:
                             metadata={"line": node.lineno, "alias": alias.asname}
                         ))
                 elif isinstance(node, ast.ImportFrom):
-                    if node.module:
-                        module_name = node.module
-                        for alias in node.names:
-                            edges.append(GraphEdge(
-                                source=file_id,
-                                target=f"module::{module_name}.{alias.name}",
-                                type="imports",
-                                metadata={"line": node.lineno, "alias": alias.asname}
-                            ))
+                    module_name = "." * node.level + (node.module or "")
+                    for alias in node.names:
+                        edges.append(GraphEdge(
+                            source=file_id,
+                            target=f"module::{module_name}.{alias.name}",
+                            type="imports",
+                            metadata={"line": node.lineno, "alias": alias.asname,
+                                      "module": node.module or "", "level": node.level,
+                                      "symbol": alias.name}
+                        ))
 
             class PythonCallVisitor(ast.NodeVisitor):
                 def __init__(self) -> None:
@@ -728,7 +756,7 @@ class GraphBuilder:
                             method_name = node.func.attr
                             edges.append(GraphEdge(
                                 source=self._call_source(),
-                                target=f"method::{method_name}",
+                                target=f"method::{node.func.value.id}.{method_name}",
                                 type="calls",
                                 metadata={"line": node.lineno}
                             ))
@@ -952,140 +980,15 @@ class GraphBuilder:
         all_file_graphs : List[KnowledgeGraph]
             List of all file graphs to analyze for cross-references
         """
-        # Build global symbol table
-        global_symbols = self._build_global_symbol_table(all_file_graphs)
-
-        # Find and resolve cross-file references
-        cross_file_edges = self._find_cross_file_references(all_file_graphs, global_symbols)
-
-        # Add cross-file edges to repository graph
-        for edge in cross_file_edges:
-            self.graph.add_edge(edge)
-
-        logger.info(f"Added {len(cross_file_edges)} cross-file reference edges")
-
-    def _build_global_symbol_table(self, all_file_graphs: List[KnowledgeGraph]) -> Dict[str, Dict[str, Any]]:
-        """
-        Build a global symbol table from all file graphs.
-
-        Returns
-        -------
-        Dict[str, Dict[str, Any]]
-            Global symbol table mapping symbol names to their definitions
-        """
-        global_symbols = {}
-
+        query = GraphQuery(self.graph)
         for file_graph in all_file_graphs:
             for node in file_graph.nodes.values():
-                is_external = node.metadata.get("external") if node.metadata else False
-                if (
-                    node.type in ['function', 'class', 'module', 'variable']
-                    and node.file != "<external>"
-                    and not is_external
-                ):
-                    symbol_key = f"{node.name}"
-                    if symbol_key not in global_symbols:
-                        global_symbols[symbol_key] = {
-                            'definition': node,
-                            'files': []
-                        }
-                    global_symbols[symbol_key]['files'].append(node.file)
-
-        return global_symbols
-
-    def _find_cross_file_references(self, all_file_graphs: List[KnowledgeGraph],
-                                  global_symbols: Dict[str, Dict[str, Any]]) -> List[GraphEdge]:
-        """
-        Find cross-file references based on the global symbol table.
-
-        Parameters
-        ----------
-        all_file_graphs : List[KnowledgeGraph]
-            All file graphs to analyze
-        global_symbols : Dict[str, Dict[str, Any]]
-            Global symbol table
-
-        Returns
-        -------
-        List[GraphEdge]
-            List of cross-file reference edges
-        """
-        cross_file_edges = []
-        repo_file_ids = {
-            node_id for node_id, node in self.graph.nodes.items()
-            if node.type == "file" and node.file != "<external>"
-        }
-
-        for file_graph in all_file_graphs:
-            file_name = None
-            # Find the file node in this graph
-            for node in file_graph.nodes.values():
-                if node.type == 'file':
-                    file_name = node.file
-                    break
-
-            if not file_name:
-                continue
-
-            # Check edges in this file for potential cross-references
-            for edge in file_graph.edges:
-                if edge.type in ['imports', 'calls', 'references']:
-                    # Extract the target symbol name
-                    target_symbol = self._extract_symbol_from_edge(edge)
-                    if target_symbol and target_symbol in global_symbols:
-                        symbol_info = global_symbols[target_symbol]
-                        # Check if this symbol is defined in other files
-                        other_files = [f for f in symbol_info['files'] if f != file_name]
-                        if other_files:
-                            # Create cross-file reference edge
-                            definition_node = symbol_info['definition']
-                            target_file_id = self._file_node_id(definition_node.file)
-                            if target_file_id not in repo_file_ids:
-                                continue
-                            cross_edge = GraphEdge(
-                                source=f"file::{file_name}",
-                                target=target_file_id,
-                                type="cross_file_reference",
-                                metadata={
-                                    "symbol": target_symbol,
-                                    "reference_type": edge.type,
-                                    "line": edge.metadata.get("line")
-                                }
-                            )
-                            cross_file_edges.append(cross_edge)
-
-        return cross_file_edges
-
-    def _extract_symbol_from_edge(self, edge: GraphEdge) -> Optional[str]:
-        """
-        Extract symbol name from an edge target.
-
-        Parameters
-        ----------
-        edge : GraphEdge
-            The edge to analyze
-
-        Returns
-        -------
-        Optional[str]
-            The symbol name if extractable, None otherwise
-        """
-        target = edge.target
-
-        # Handle different target formats
-        if target.startswith("module::"):
-            return target.replace("module::", "")
-        elif target.startswith("function::"):
-            return target.replace("function::", "")
-        elif target.startswith("class::"):
-            return target.replace("class::", "")
-        elif "::" in target:
-            # Extract the symbol name from file::symbol format
-            parts = target.split("::")
-            if len(parts) >= 2:
-                return parts[-1]
-
-        return None
+                if node.type == "file":
+                    for dependency in query.find_dependencies(node.file):
+                        if dependency != node.file:
+                            self.graph.add_edge(GraphEdge(
+                                source=node.id, target=self._file_node_id(dependency),
+                                type="cross_file_reference", metadata={"reference_type": "imports"}))
 
     def validate_graph(self) -> Dict[str, Any]:
         """
@@ -1311,7 +1214,8 @@ class GraphQuery:
         # Find all function nodes with this name
         function_nodes = []
         for node in self.graph.nodes.values():
-            if is_function_like_node(node) and node.name == function_name:
+            if is_function_like_node(node) and function_name in (
+                    node.name, node.metadata.get("qualified_name"), node.id):
                 function_nodes.append(node)
                 hierarchy["locations"].append({
                     "file": node.file,
@@ -1337,7 +1241,8 @@ class GraphQuery:
                     callee_id = edge.target
                     # Extract function name from target
                     if "::" in callee_id:
-                        callee_name = callee_id.split("::")[-1]
+                        callee_node = self.graph.nodes.get(callee_id)
+                        callee_name = callee_node.name if callee_node else callee_id.split("::")[-1]
                         hierarchy["callees"].append({
                             "name": callee_name,
                             "line": edge.metadata.get("line")
@@ -1374,14 +1279,30 @@ class GraphQuery:
                 if target.startswith("file::"):
                     dependencies.add(target.replace("file::", ""))
                 elif target.startswith("module::"):
-                    # Try to find the module's file
-                    module_name = target.replace("module::", "")
-                    for node in self.graph.nodes.values():
-                        if node.type == "file" and module_name in node.file:
-                            dependencies.add(node.file)
+                    module = edge.metadata.get("module")
+                    if module is None:
+                        module = target.split("::", 1)[1]
+                    level = edge.metadata.get("level", 0)
+                    if level:
+                        package = list(Path(file_path).parent.parts)
+                        if level > len(package):
+                            continue
+                        module = ".".join(package[:len(package) - level + 1] +
+                                          ([module] if module else []))
+                    symbol = edge.metadata.get("symbol")
+                    modules = [module + "." + symbol, module] if symbol and symbol != "*" else [module]
+                    file_nodes = {node.file for node in self.graph.nodes.values() if node.type == "file"}
+                    for candidate in modules:
+                        path = candidate.replace(".", "/")
+                        matches = {name for name in file_nodes if name in
+                                   {path + ".py", path + "/__init__.py",
+                                    "src/" + path + ".py", "src/" + path + "/__init__.py"}}
+                        if matches:
+                            if len(matches) == 1:
+                                dependencies.update(matches)
                             break
 
-        return list(dependencies)
+        return sorted(dependencies)
 
     def search_by_pattern(self, pattern: str, node_types: Optional[List[str]] = None) -> List[GraphNode]:
         """

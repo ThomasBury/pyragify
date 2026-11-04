@@ -1,4 +1,5 @@
 import ast
+import codecs
 import hashlib
 import json
 import re
@@ -141,7 +142,7 @@ DEFAULT_SKIP_PATTERNS = [
     "*.svg",
 ]
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 CACHE_FILENAME = ".pyragify-cache.json"
 MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
 
@@ -153,7 +154,9 @@ def is_probably_binary_file(file_path: Path, sample_size: int = 2048) -> bool:
     """Heuristically detect binary files so they can be skipped before decoding."""
     try:
         with open(file_path, "rb") as file:
-            sample = file.read(sample_size)
+            sample = file.read(sample_size + 1)
+            complete = len(sample) <= sample_size
+            sample = sample[:sample_size]
     except OSError:
         return False
 
@@ -164,7 +167,7 @@ def is_probably_binary_file(file_path: Path, sample_size: int = 2048) -> bool:
         return True
 
     try:
-        sample.decode("utf-8")
+        codecs.getincrementaldecoder("utf-8")().decode(sample, final=complete)
     except UnicodeDecodeError:
         return True
 
@@ -394,7 +397,7 @@ class FileProcessor:
             # Extract functions and classes using AST
             tree = ast.parse(file_content, filename=file_path)
             for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     func_name = node.name
                     code_snippet = ast.get_source_segment(file_content, node)
                     chunks.append({
@@ -411,7 +414,7 @@ class FileProcessor:
                     code_snippet = ast.get_source_segment(file_content, node)
                     methods = []
                     for class_node in node.body:
-                        if isinstance(class_node, ast.FunctionDef):
+                        if isinstance(class_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             method_name = class_node.name
                             methods.append({
                                 "name": method_name,
@@ -559,7 +562,7 @@ class FileProcessor:
 
         # Build graph if enabled
         graph = None
-        if self.enable_graph and self.graph_builder and chunks:
+        if self.enable_graph and self.graph_builder:
             try:
                 graph = self.graph_builder.build_from_chunks(file_path, chunks, language)
 

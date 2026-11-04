@@ -64,6 +64,12 @@ Keep unrelated files elsewhere. Do not run concurrent exports into the same
 output directories. Rollback handles raised errors, not process termination or
 power loss during publication.
 
+Graph symbols carry enclosing scopes, so `A.run` and `B.run` have separate
+identities. Hierarchy queries accept a bare name, a qualified name, or a node ID.
+Python dependency queries resolve exact module paths at the repository root or
+under `src/`, including relative imports. Custom import roots and dynamic
+receivers remain unresolved. Cross-file edges require explicit imports.
+
 The graph remains experimental: these safety guarantees do not establish correct
 relationships or complete source extraction. Those are later plan milestones.
 
