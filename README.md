@@ -1,84 +1,58 @@
 # Pyragify
 
-<div align="center">
+Export a local repository as readable Markdown with a JSON manifest that records
+where the source came from and what was excluded. Each selected UTF-8 file is
+retained once, including imports, decorators, comments, whitespace, and Unicode.
 
-**Transform your code repositories into LLM-ready context for NotebookLM and other AI assistants.**
-
-[![PyPI version](https://badge.fury.io/py/pyragify.svg)](https://pypi.org/project/pyragify/)
-[![Python 3.9–3.12](https://img.shields.io/badge/python-3.9--3.12-blue.svg)](https://www.python.org/downloads/)
-[![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](LICENSE)
-
-[📖 Full Documentation](https://thomasbury.github.io/pyragify/) • [🐛 Issues](https://github.com/ThomasBury/pyragify/issues) • [💡 Discussions](https://github.com/ThomasBury/pyragify/discussions)
-
-</div>
-
-## ✨ What is Pyragify?
-
-Pyragify transforms code repositories into structured, LLM-ready context. It processes multiple programming languages, extracts semantic relationships, and creates manageable chunks optimized for AI analysis with tools like NotebookLM.
-
-## 🚀 Key Features
-
-- **🔍 Knowledge Graph**: Build comprehensive graphs of code relationships
-- **🌍 Multi-Language Support**: Python, JavaScript, TypeScript, Java, C/C++, and more
-- **🎯 Semantic Chunking**: Preserve context and relationships for better AI analysis
-- **📊 Query Interface**: Explore your codebase with powerful graph queries
-- **⚡ High Performance**: Parallel processing with incremental updates
-- **📱 NotebookLM Ready**: Optimized output format for seamless AI integration
-
-## 🚀 Quick Start
-
-### Install
+## Use from a source checkout
 
 ```bash
-# Using uv (recommended)
-uv pip install pyragify
-
-# Using pip
-pip install pyragify
+uv sync --locked --group dev --group docs
+uv run pyragify process-repo --repo-path ./my-project --output-dir ./output --no-enable-graph
 ```
 
-### Basic Usage
+The CLI reads `config.yaml` in the current directory when present; supplied
+options override it. Open `output/index.md` to follow links to complete source
+files and inspect omissions. `output/metadata.json` contains source hashes,
+line ranges, and exact byte ranges within the Markdown parts. Unchanged files
+reuse the versioned cache; deleted files disappear on the next successful run.
+
+`max_words` is a positive, hard limit on every generated Markdown file, including
+formatting and the index. Words are whitespace-separated units, not model tokens.
+Files stay whole: an oversized file or index fails the export before publication.
+Raise the limit or deliberately exclude that source file. Read the
+[output contract](docs/user-guide/output-formats.md) and
+[safety and selection rules](docs/getting-started/configuration.md) before sharing.
+
+## Why retain a custom exporter?
+
+[The measured Repomix comparison](docs/user-guide/repomix-comparison.md) found that
+Repomix handles ordinary readable packaging well, including Unicode and size
+failures. Pyragify retains a narrow exporter for exact source bytes and the
+hash, part mapping, and omission manifest required by this project. There is no
+Repomix wrapper or runtime dependency.
+
+## Experimental graphs
+
+Graph output is opt-in and outside the trusted source handoff. Its relationships
+can be incomplete or wrong; structural validation does not establish accuracy.
 
 ```bash
-# Process your repository
-pyragify process-repo --repo-path ./my-project --enable-graph
-
-# Query the knowledge graph
-pyragify query-graph --command stats
-pyragify query-graph --command related --entity "src/main.py::MyClass"
+uv run pyragify process-repo --repo-path ./my-project --output-dir ./output --enable-graph
+uv run pyragify query-graph --graph-path output/graphs/repository_graph.json --command stats
 ```
 
-## 📖 Documentation
+Source retention does not depend on a parser. No NotebookLM ingestion result,
+LLM answer-quality improvement, or large-repository performance is claimed.
 
-📚 **[Full Documentation](https://thomasbury.github.io/pyragify/)** - Complete guides, tutorials, and API reference
+## Development and documentation
 
-**Popular Sections:**
+```bash
+uv run --locked pytest
+uv run --locked --group docs mkdocs build
+```
 
-- [Installation Guide](https://thomasbury.github.io/pyragify/getting-started/installation/)
-- [Configuration Reference](https://thomasbury.github.io/pyragify/getting-started/configuration/)
-- [CLI Reference](https://thomasbury.github.io/pyragify/user-guide/cli-reference/)
-- [Knowledge Graph Guide](https://thomasbury.github.io/pyragify/user-guide/knowledge-graph/)
-
-## 🎯 Perfect For
-
-- **Code Analysis** - Understand complex codebases quickly
-- **AI Integration** - Prepare code for LLM analysis with NotebookLM
-- **Code Review** - Analyze relationships and dependencies
-- **Documentation** - Generate comprehensive API docs
-- **Onboarding** - Help new team members understand the codebase
-
-## 🤝 Contributing
-
-We welcome contributions! See our [Contributing Guide](https://thomasbury.github.io/pyragify/contributing/) for development setup, code style guidelines, and how to submit pull requests.
-
-## 📄 License
-
-This project is licensed under the Unlicense - see the [LICENSE](LICENSE) file for details.
-
----
-
-<div align="center">
-
-**Ready to transform your codebase?** [Get started!](https://thomasbury.github.io/pyragify/getting-started/quick-start/)
-
-</div>
+See the [quick start](docs/getting-started/quick-start.md),
+[CLI reference](docs/user-guide/cli-reference.md),
+[contribution guide](docs/contributing.md), and [implementation plan](PLAN.md).
+Python 3.9–3.12 is supported. Licensed under the [Unlicense](LICENSE).

@@ -240,16 +240,12 @@ class TestFileProcessor:
         if suffix in {".js", ".ts", ".java", ".c", ".cpp"}:
             assert not any(c["type"] == "file" and "content" in c for c in chunks)
 
-    def test_chunk_file_routing(self, sample_python_file, sample_markdown_file, sample_js_file, tmp_path):
-        """Test chunk_file routes to correct method."""
-        output_dir = tmp_path / "output"
-        processor = FileProcessor(tmp_path, output_dir)
-        py_chunks, _ = processor.chunk_file(sample_python_file)
-        assert any(c["type"] == "function" for c in py_chunks)
-        md_chunks, _ = processor.chunk_file(sample_markdown_file)
-        assert "header" in md_chunks[0]
-        js_chunks, _ = processor.chunk_file(sample_js_file)
-        assert any(c["type"] == "javascript_function" for c in js_chunks)
+    def test_chunk_file_preserves_source(self, sample_python_file, sample_markdown_file, sample_js_file, tmp_path):
+        processor = FileProcessor(tmp_path, tmp_path / "output")
+        for file in (sample_python_file, sample_markdown_file, sample_js_file):
+            chunks, _ = processor.chunk_file(file)
+            assert len(chunks) == 1
+            assert chunks[0]["content"] == file.read_text()
 
     def test_format_chunk(self):
         """Test formatting various chunk types."""

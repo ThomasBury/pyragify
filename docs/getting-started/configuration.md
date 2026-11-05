@@ -13,7 +13,7 @@ skip_patterns: ["*.log", "*.tmp"]
 skip_dirs: [node_modules, __pycache__]
 verbose: false
 graph:
-  enabled: true
+  enabled: false
   output_dir: graphs
 ```
 
@@ -22,8 +22,8 @@ graph:
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `repo_path` | Required | Source directory |
-| `output_dir` | `./output` | Dedicated text and metadata output directory |
-| `max_words` | `200000` | Target words per file; oversized semantic chunks may exceed it |
+| `output_dir` | `./output` | Dedicated Markdown and manifest output directory |
+| `max_words` | `200000` | Positive hard word limit per Markdown file, including formatting; oversized files or index fail |
 | `max_file_size` | `10485760` | Maximum source size in bytes |
 | `skip_patterns` | Built-in image patterns and `.git` | Additional patterns, using gitignore syntax |
 | `skip_dirs` | `[node_modules, __pycache__]` | Directory names to exclude; an empty list also uses these defaults |
@@ -76,8 +76,9 @@ Without Git discovery, Pyragify walks directories without following symlinks,
 honors root and nested `.gitignore` files, and prunes ignored directories before
 reading their children. Git global ignores and `.git/info/exclude` are not used
 in this fallback. Pruned directories are recorded as directory exclusions rather
-than a list of every file beneath them. Git-ignored files are omitted by Git
-before metadata is assembled, so metadata is not a complete exclusion inventory.
+than a list of every file beneath them. Git-ignored paths are recorded from Git, using compact directory entries that
+cover their descendants. The index and manifest also record generated-output
+directories and repository metadata as omissions.
 These filters are not a secret scanner; inspect exports before sharing them.
 
 Replacement text, graph, metadata, hashes, and cache files are prepared before
@@ -86,7 +87,7 @@ errors restore previous artifact contents. Source read/worker failures are
 reported separately from exclusions and abort publication. A missing or invalid
 optional cache triggers processing again; malformed graph query inputs fail.
 
-`.pyragify-artifacts.json` records owned text chunks. Only previously listed
+`.pyragify-artifacts.json` records owned Markdown parts (and recognizes owned legacy text parts). Only previously listed
 chunks are removed when obsolete. Old exports without this list may leave stale
 chunks; inspect those files and remove them manually. Current chunk names and
 standard JSON artifact names are reserved for Pyragify in the output directories.
@@ -101,4 +102,7 @@ under `src/`, including relative imports. Custom import roots and dynamic
 receivers remain unresolved. Cross-file edges require explicit imports.
 
 The graph remains experimental: these safety guarantees do not establish correct
-relationships or complete source extraction. Those are later plan milestones.
+relationships. Source retention is separate and complete for every selected UTF-8
+file; see the [output contract](../user-guide/output-formats.md). Source-only exports
+do not use parsers. Do not edit sources during a run or expect repository-wide
+snapshot isolation.

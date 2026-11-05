@@ -13,13 +13,13 @@ pyragify process-repo --repo-path ./my-project --output-dir ./output --enable-gr
 | --- | --- |
 | `--config-file PATH` | Read YAML; defaults to `config.yaml` in the current directory |
 | `--repo-path PATH` | Override the required source directory |
-| `--output-dir PATH` | Override text output; defaults to `./output` |
-| `--max-words INTEGER` | Target words per output file; oversized chunks can exceed it |
+| `--output-dir PATH` | Override Markdown and manifest output; defaults to `./output` |
+| `--max-words INTEGER` | Positive hard word limit per Markdown file including headers; oversized files or index fail |
 | `--max-file-size INTEGER` | Maximum source file size in bytes; default 10485760 |
 | `--skip-patterns TEXT` | Override configured skip patterns; repeat for multiple patterns |
 | `--skip-dirs TEXT` | Override skipped directory names; repeat for multiple names |
 | `--verbose` / `--no-verbose` | Override verbose logging |
-| `--enable-graph` / `--no-enable-graph` | Override graph building |
+| `--enable-graph` / `--no-enable-graph` | Override experimental graph building, outside the trusted handoff |
 | `--graph-output-dir PATH` | Graph output directory; relative paths are under text output |
 | `--graph-format TEXT` | Only `json` is supported |
 | `--include-relationships TEXT` | Unsupported; graph-enabled processing rejects filtering |

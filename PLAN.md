@@ -189,7 +189,7 @@ Third PR review follow-up (2026-11-05): inheritance edges originate at each scop
 
 Final CodeRabbit follow-up (2026-11-05): text queries include relationship paths; invalid search regular expressions fail instead of returning empty success. Development setup respects the activated environment, cache removal follows the configured output directory, and installation instructions distinguish source checkouts. **100 tests pass on Python 3.9 and 3.12**, and the docs build passes. Codex cleared commit `7492b2a` before this follow-up; the final head is submitted for another review.
 
-### M2 — One useful handoff, with a reuse decision first: next milestone
+### M2 — One useful handoff, with a reuse decision first: implemented (2026-11-05)
 
 First compare Repomix against this repository, one small Python application, and a mixed-language fixture containing Unicode and deliberately oversized files. Check retained source, provenance, file selection, readable navigation, and limits. Record concrete unmet requirements.
 
@@ -198,6 +198,22 @@ If Repomix already supplies the needed handoff, document the supported workflow 
 For any retained custom exporter, address findings 4, 5, and 8; produce the two outputs above; bump the cache version when extraction changes; and correct finding 9 across README, configuration, CLI help, and the affected docs. Keep graph output experimental and outside the trusted handoff until finding 6 is resolved. Do not broaden graph scope in this milestone.
 
 Done when every included source range is present once and traceable, imports/decorators/async code/Unicode survive, oversized input follows the documented limit policy, clean and incremental runs agree, deleted files disappear, and a developer can locate a definition and understand omissions from the bundle alone. The readable output and manifest must agree. No LLM-quality percentage should be claimed without a separate evaluation.
+
+M2 implementation and verification:
+
+- Compared pinned Repomix **1.18.1** locally against this repository, a small Python application, and a mixed-language fixture with Unicode, embedded Markdown fences, and an oversized file. The reproducible assertion harness is [scripts/compare_repomix.py](scripts/compare_repomix.py); observations and the reuse decision are in [the comparison report](docs/user-guide/repomix-comparison.md).
+- Repomix preserved ordinary source after outer-whitespace normalization, respected the tested nested ignore and external symlink, and failed explicitly when an indivisible file exceeded its split limit. Its JSON output removed the source's final newline and supplied no source-hash, output-part mapping, or explicit omission manifest. These are concrete unmet requirements; retain the existing narrow exporter for this gap, without a wrapper, tokenizer, or new dependency.
+- The trusted handoff now uses whole-file, non-overlapping UTF-8 source blocks in `.md` parts and a linked `index.md` listing files, source ranges, hashes, omissions, and parser limitations. Imports, decorators, async code, comments, whitespace, original line endings, malformed code, and Unicode survive. Dynamic fence lengths protect embedded Markdown. Source hashes and sizes are computed from the retained bytes.
+- `metadata.json` format version **1** maps each included file to its source hash, source line range, part, anchor, and exact half-open output byte range. Cache version **5** invalidates earlier extraction records; cache reuse is separate from exclusions, and corrupt cached source is reprocessed. Git-ignored paths are reported with compact directory entries; generated outputs and repository boundaries are also explained.
+- `max_words` is positive and bounds every generated Markdown file, including headers and the index. Whole files are indivisible: oversized source or an oversized index fails before publication, preserving the prior handoff. Owned legacy `.txt` parts migrate to `.md`; unowned artifacts remain untouched.
+- Graphs remain experimental, opt-in, and outside the trusted handoff. Existing semantic extractors serve only graphs; parser diagnostics are recorded without dropping source. README, CLI help, configuration, package description, and affected user guides describe the implemented contract. The historical PRD is explicitly marked unvalidated and archived.
+- `uv run --locked pytest -q`: **113 passed** on Python **3.12.7**. `UV_PROJECT_ENVIRONMENT=/tmp/pyragify-m2-py39 uv run --locked --python 3.9 --group dev pytest -q`: **113 passed** on Python **3.9.25**.
+- `uv run --locked --group docs mkdocs build --site-dir /tmp/pyragify-m2-site`: passed, with only the existing API pages outside navigation notices. `git diff --check`: passed.
+- Two real graph-enabled CLI exports selected **45 files** into three source parts plus the index. Every mapped source byte range and hash matched the working tree. The second run reused **all 45 cache records**, started no fresh processing, and produced byte-identical Markdown. Artifacts: `/tmp/pyragify-m2-verified`; comparison assertion results: `/tmp/pyragify-m2-repomix-repro/results.json`.
+
+Limits: files and the index are not split internally; users must raise the limit or deliberately reduce selection. Directory omission entries cover descendants without enumerating them. Source-only exports require no parser; experimental graph extraction can reread source independently. Whole-repository snapshot isolation, concurrent exports, crash recovery, large-repository performance, actual NotebookLM ingestion, and LLM answer quality remain unverified or unsupported as documented. No later milestone or graph expansion was started.
+
+M2 PR review follow-up (2026-11-05): universal newline counting now handles CR-only and mixed CR/LF files without changing retained bytes. Regression cases check the source header, index, manifest, and exact byte mapping, including empty files, final line endings, and Unicode line separators inside source strings. Cache version 5 invalidates earlier cached line ranges. **123 tests pass on Python 3.9.25 and 3.12.7**; the documentation build passes with the existing API navigation notices.
 
 ## Scope cuts and verification limits
 

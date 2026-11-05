@@ -1,7 +1,7 @@
 [project]
 name = "pyragify"
 version = "0.2.0"
-description = "A tool for processing code repositories into semantic chunks for analysis with LLMs, especiallyNotebookLM."
+description = "Export repository source as Markdown with a provenance manifest and optional experimental code graphs."
 readme = "README.md"
 requires-python = ">=3.9, <3.13"
 authors = [
