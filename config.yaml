@@ -1,6 +1,6 @@
 repo_path: .
 output_dir: ./output
-max_words: 200000
+max_words: 200000  # Hard words-per-Markdown-file limit, including headers; oversized files fail
 max_file_size: 10485760  # 10 MB
 skip_patterns:
   - ".git"
@@ -17,7 +17,7 @@ skip_patterns:
 skip_dirs: []
 verbose: false
 
-# Knowledge Graph Configuration
+# Experimental graph output is separate from the trusted source handoff.
 graph:
-  enabled: true  # Set to true to enable graph building
+  enabled: false  # Opt in separately to experimental graph building
   output_dir: "./graphs"  # Directory to save graph files

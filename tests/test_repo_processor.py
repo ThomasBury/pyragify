@@ -13,7 +13,7 @@ def test_chunk_file_can_return_graph(tmp_path):
     chunks, line_count, graph = processor.chunk_file(sample_file, include_graph=True)
 
     assert line_count == 2
-    assert any(chunk["type"] == "function" for chunk in chunks)
+    assert chunks[0]["content"] == sample_file.read_text()
     assert isinstance(graph, KnowledgeGraph)
     assert "file::sample.py" in graph.nodes
 
@@ -57,15 +57,15 @@ def test_chunk_buffers_stay_in_their_own_subdirs(tmp_path):
     python_chunk = {"type": "function", "name": "f", "code": "def f():\n    return 1"}
 
     markdown_words = len(processor.file_processor.format_chunk(markdown_chunk, "doc.md").split())
-    processor.max_words = markdown_words + 1
+    processor.max_words = max(markdown_words, len(processor.file_processor.format_chunk(python_chunk, "code.py").split())) + 1
 
     processor.save_chunk(markdown_chunk, "markdown", "doc.md")
     processor.save_chunk(python_chunk, "python", "code.py")
     processor.save_content("markdown")
     processor.save_content("python")
 
-    markdown_output = (tmp_path / "output" / "markdown" / "chunk_0.txt").read_text(encoding="utf-8")
-    python_output = (tmp_path / "output" / "python" / "chunk_0.txt").read_text(encoding="utf-8")
+    markdown_output = (tmp_path / "output" / "markdown" / "chunk_0.md").read_text(encoding="utf-8")
+    python_output = (tmp_path / "output" / "python" / "chunk_0.md").read_text(encoding="utf-8")
 
     assert "File: doc.md" in markdown_output
     assert "File: code.py" in python_output
@@ -81,7 +81,7 @@ def test_incremental_processing_keeps_unchanged_files_in_output(tmp_path):
     (tmp_path / "b.py").write_text("def change():\n    return 'new'\n", encoding="utf-8")
     RepoContentProcessor(tmp_path, output_dir).process_repo()
 
-    output = (output_dir / "python" / "chunk_0.txt").read_text(encoding="utf-8")
+    output = (output_dir / "python" / "chunk_0.md").read_text(encoding="utf-8")
     metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
     skipped = {entry["path"]: entry["reason"] for entry in metadata["skipped_files"]}
 
@@ -91,7 +91,8 @@ def test_incremental_processing_keeps_unchanged_files_in_output(tmp_path):
     assert "return 'new'" in output
     assert "return 'old'" not in output
     assert {entry["path"] for entry in metadata["processed_files"]} == {"a.py", "b.py"}
-    assert skipped["a.py"] == "Unchanged file (hash match)"
+    assert "a.py" in metadata["reused_files"]
+    assert "a.py" not in skipped
 
 
 def test_deleting_file_cache_forces_reprocessing(tmp_path):
@@ -119,7 +120,7 @@ def test_incremental_processing_drops_deleted_files(tmp_path):
     (tmp_path / "a.py").unlink()
     RepoContentProcessor(tmp_path, output_dir).process_repo()
 
-    output = (output_dir / "python" / "chunk_0.txt").read_text(encoding="utf-8")
+    output = (output_dir / "python" / "chunk_0.md").read_text(encoding="utf-8")
     metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
     hashes = json.loads((output_dir / "hashes.json").read_text(encoding="utf-8"))
     cache = json.loads((output_dir / ".pyragify-cache.json").read_text(encoding="utf-8"))
@@ -134,8 +135,8 @@ def test_incremental_processing_drops_deleted_files(tmp_path):
 def test_process_repo_ignores_output_dir_artifacts(tmp_path):
     output_dir = tmp_path / "output"
     (output_dir / "python").mkdir(parents=True)
-    (output_dir / "python" / "chunk_0.txt").write_text(
-        "---\nFile: output/python/chunk_0.txt\n---\n",
+    (output_dir / "python" / "chunk_0.md").write_text(
+        "---\nFile: output/python/chunk_0.md\n---\n",
         encoding="utf-8",
     )
     (tmp_path / "app.py").write_text("def app():\n    return 1\n", encoding="utf-8")
@@ -143,12 +144,12 @@ def test_process_repo_ignores_output_dir_artifacts(tmp_path):
     RepoContentProcessor(tmp_path, output_dir).process_repo()
 
     metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
-    output = (output_dir / "python" / "chunk_0.txt").read_text(encoding="utf-8")
+    output = (output_dir / "python" / "chunk_0.md").read_text(encoding="utf-8")
 
     assert {entry["path"] for entry in metadata["processed_files"]} == {"app.py"}
     assert all(not entry["path"].startswith("output/") for entry in metadata["processed_files"])
     assert "File: app.py" in output
-    assert "output/python/chunk_0.txt" not in output
+    assert "output/python/chunk_0.md" not in output
 
 
 def test_incremental_graph_rebuild_keeps_cached_unchanged_file_nodes(tmp_path):

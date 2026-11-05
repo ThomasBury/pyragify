@@ -148,7 +148,7 @@ def test_failed_export_preserves_previous_artifacts(tmp_path, monkeypatch, failu
         original = os.replace
 
         def replace(src, dst):
-            if str(dst) == str(output / "python/chunk_0.txt") and "stage" not in str(src):
+            if str(dst) == str(output / "python/chunk_0.md") and "stage" not in str(src):
                 raise OSError("injected publication error")
             return original(src, dst)
 
@@ -171,7 +171,7 @@ def test_cleanup_deletes_only_owned_chunks(tmp_path):
     RepoContentProcessor(repo, output).process_repo()
     (repo / "app.py").unlink()
     RepoContentProcessor(repo, output).process_repo()
-    assert not (output / "python/chunk_0.txt").exists()
+    assert not (output / "python/chunk_0.md").exists()
     assert unknown.read_text() == "unowned file"
 
 
@@ -181,7 +181,7 @@ def test_required_artifact_directory_causes_cli_failure(tmp_path):
     result = CliRunner().invoke(app, ["process-repo", "--config-file", str(tmp_path / "missing"),
                                      "--repo-path", str(repo), "--output-dir", str(output)])
     assert result.exit_code == 1
-    assert not (output / "python/chunk_0.txt").exists()
+    assert not (output / "python/chunk_0.md").exists()
 
 
 def test_symlinked_chunk_cannot_overwrite_external_file(tmp_path):
@@ -189,7 +189,7 @@ def test_symlinked_chunk_cannot_overwrite_external_file(tmp_path):
     (output / "python").mkdir(parents=True)
     external = tmp_path / "external.txt"
     external.write_text("precious")
-    (output / "python/chunk_0.txt").symlink_to(external)
+    (output / "python/chunk_0.md").symlink_to(external)
     with pytest.raises(ValueError, match="Symlink"):
         RepoContentProcessor(repo, output).process_repo()
     assert external.read_text() == "precious"
@@ -208,8 +208,7 @@ def test_invalid_optional_cache_reprocesses_source(tmp_path, cache_kind):
         cache.write_text(json.dumps(data))
     processor = RepoContentProcessor(repo, output, enable_graph=True)
     processor.process_repo()
-    assert not any(item["reason"] == "Unchanged file (hash match)"
-                   for item in processor.metadata["skipped_files"])
+    assert processor.metadata["reused_files"] == []
     assert "file::app.py" in json.loads((output / "graphs/repository_graph.json").read_text())["nodes"]
 
 

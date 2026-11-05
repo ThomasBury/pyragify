@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(help="A tool to process repositories and output text files for NotebookLM.")
+app = typer.Typer(help="Export complete repository source as Markdown with a provenance manifest.")
 
 
 def _config_value(config: Any, key: str, default: Any = None) -> Any:
@@ -33,21 +33,21 @@ def process_repo(
     config_file: Path = typer.Option("config.yaml", help="Path to the configuration YAML file."),
     repo_path: Path = typer.Option(None, help="Override: Path to the repository to process."),
     output_dir: Path = typer.Option(None, help="Override: Directory to save output files."),
-    max_words: int = typer.Option(None, help="Override: Maximum number of words per output file."),
+    max_words: int = typer.Option(None, help="Positive word limit per Markdown file, including headers. Oversized files fail."),
     max_file_size: int = typer.Option(None, help="Override: Maximum file size to process (in bytes)."),
     skip_patterns: list[str] = typer.Option(None, help="Override: List of file patterns to skip."),
     skip_dirs: list[str] = typer.Option(None, help="Override: List of directories to skip."),
     verbose: bool = typer.Option(None, help="Override: Enable verbose output."),
-    enable_graph: bool = typer.Option(None, help="Override: Enable knowledge graph building."),
+    enable_graph: bool = typer.Option(None, help="Override: Enable experimental graph output (outside the source handoff)."),
     graph_output_dir: str = typer.Option(None, help="Override: Directory to save graph files."),
     graph_format: str = typer.Option(None, help="Override: Graph serialization format (only json is supported)."),
     include_relationships: list[str] = typer.Option(None, help="Unsupported: relationship filtering is not implemented.")
 ) -> None:
     """
-    Process a repository and output its content to text files with a specified word limit.
+    Export complete UTF-8 source, a Markdown index, and metadata.json.
 
     This command processes a repository using a configuration file and optional command-line overrides. 
-    It outputs text files based on the repository's contents and saves metadata about the processing.
+    Each source file is retained once. A file or index that cannot fit the word limit fails before publication.
 
     Parameters
     ----------

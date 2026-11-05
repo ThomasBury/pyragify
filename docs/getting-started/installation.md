@@ -65,7 +65,7 @@ You should see output similar to:
 ```
 Usage: pyragify [OPTIONS] COMMAND [ARGS]...
 
-A tool to process repositories and output text files for NotebookLM.
+Export complete repository source as Markdown with a provenance manifest.
 
 Options:
   --help  Show this message and exit.

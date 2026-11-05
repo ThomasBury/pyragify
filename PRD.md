@@ -1,3 +1,8 @@
+> **ARCHIVED PROPOSAL:** This document does not describe supported features or
+> verified results. Its completion, compression, performance, and LLM-quality
+> claims are unvalidated historical proposals. Use [PLAN.md](PLAN.md),
+> [README.md](README.md), and the current docs for implemented behavior.
+
 > Historical proposal, not a record of implemented features or measured results.
 > See [PLAN.md](PLAN.md) for current scope and verification. Checkmarks below
 > have been cleared because the earlier completion claims were not validated.

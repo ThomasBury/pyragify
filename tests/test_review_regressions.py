@@ -124,7 +124,7 @@ def test_unicode_preserves_parser_code_and_references(tmp_path, filename, source
     assert any(edge.type == "calls" and edge.target == target for edge in graph.edges)
     file = tmp_path / filename
     chunks, _ = FileProcessor(tmp_path, tmp_path / "output").chunk_file(file)
-    assert any("foo()" in chunk.get("code", "") for chunk in chunks)
+    assert chunks[0]["content"] == source
     assert all(chunk["code"] in source for chunk in chunks if "code" in chunk)
 
 
