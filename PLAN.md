@@ -176,6 +176,15 @@ PR review follow-up (2026-11-04):
 - Python package dependencies use exact root or `src/` module paths, including relative imports. Cross-file edges now require explicit imports instead of matching bare symbol names.
 - Cache format version 2 invalidates older extraction records. `uv run --locked pytest -q`: **82 passed**; the documentation build also passed with the existing notices.
 
+Second PR review follow-up (2026-11-05):
+
+- Graph-enabled runs validate all cached graph records, including empty chunks after an earlier graph-disabled run.
+- Tree-sitter code and reference text come from UTF-8 node bytes. JavaScript imports keep source modules and the original statement; default, namespace, and side-effect imports are included. System C/C++ includes survive other edges.
+- Unnamed chunk IDs remain unique after repeated collisions. Dependency queries build their file index once per call. Cache version 3 invalidates older parser records.
+- The worker return annotation supports Python 3.9. **95 tests passed on Python 3.12.7 and Python 3.9.25**.
+- Inactive graph settings are rejected; configuration examples now use supported settings. Documentation corrects CLI syntax, installation groups, partial extraction, license metadata, generated edit paths, and unsupported project-status claims.
+- The test workflow token has read-only contents access. The docs build passes; API pages outside navigation remain informational notices, and the broken LICENSE link is fixed.
+
 ### M2 — One useful handoff, with a reuse decision first: next milestone
 
 First compare Repomix against this repository, one small Python application, and a mixed-language fixture containing Unicode and deliberately oversized files. Check retained source, provenance, file selection, readable navigation, and limits. Record concrete unmet requirements.

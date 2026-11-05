@@ -5,7 +5,7 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2024-01-XX
+## [0.2.0] — unreleased branch work
 
 ### Added
 
@@ -20,36 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Graph validation and repair functionality
 - Cross-file reference resolution
 - Advanced query patterns and pattern matching
-
-### Changed
-
-- Improved Python AST parsing with better error handling
-- Enhanced output formatting for better NotebookLM compatibility
-- Updated configuration system with graph-specific options
-- Restructured documentation for better user experience
-- Enhanced CLI with additional query commands and options
-
-### Fixed
-
-- Format chunk method to handle list-type content properly
-- Tree-sitter version compatibility issues with automatic fallback to regex parsing
-- Memory usage optimization for large codebases
-- Encoding issues with non-UTF8 files
-- Graph serialization and deserialization edge cases
-
-## [Unreleased] - Development
-
-### Planned for v0.3.0
-
-- Graph visualization interface
-- Advanced query language for complex analysis
-- Plugin system for custom parsers
-- Integration with popular IDEs
-- Machine learning-based code pattern recognition
-
-## [0.2.0] - 2024-01-XX
-
-### Added
 
 - Knowledge Graph Integration (Phase 1-3)
   - Graph data structures (GraphNode, GraphEdge, KnowledgeGraph)
@@ -67,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Improved Python AST parsing with better error handling
+- Enhanced output formatting for better NotebookLM compatibility
+- Updated configuration system with graph-specific options
+- Restructured documentation for better user experience
+- Enhanced CLI with additional query commands and options
+
 - Refactored FileProcessor for better modularity
 - Improved chunking algorithms for semantic preservation
 - Enhanced configuration validation
@@ -74,12 +50,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Format chunk method to handle list-type content properly
+- Tree-sitter version compatibility issues with automatic fallback to regex parsing
+- Memory usage optimization for large codebases
+- Encoding issues with non-UTF8 files
+- Graph serialization and deserialization edge cases
+
 - Various parsing edge cases
 - Memory leaks in large file processing
 - File encoding detection issues
 - Skip pattern matching inconsistencies
 
-## [0.1.0] - 2024-01-XX
+## [Unreleased] - Development
+
+### Planned for v0.3.0
+
+- Graph visualization interface
+- Advanced query language for complex analysis
+- Plugin system for custom parsers
+- Integration with popular IDEs
+- Machine learning-based code pattern recognition
+
+## [0.1.0] — date not recorded
 
 ### Added
 
@@ -106,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Development Versions
 
-### [0.0.1-alpha] - 2024-01-XX
+### [0.0.1-alpha] — date not recorded
 
 - Initial prototype
 - Basic Python file processing

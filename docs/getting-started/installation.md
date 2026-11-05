@@ -57,7 +57,7 @@ After installation, verify that Pyragify is working:
 
 ```bash
 # Check version
-pyragify --version
+pyragify --help
 
 # View help
 pyragify --help
@@ -88,7 +88,7 @@ For advanced parsing of JavaScript, TypeScript, Java, and C/C++ files:
 
 ```bash
 # These are included by default, but you can ensure they're installed
-uv pip install tree-sitter tree-sitter-languages
+uv sync --locked
 ```
 
 !!! note "Tree-sitter Compatibility"
@@ -99,11 +99,7 @@ uv pip install tree-sitter tree-sitter-languages
 If you plan to contribute to Pyragify:
 
 ```bash
-# Install development dependencies
-uv pip install -e ".[dev]"
-
-# Or with pip
-pip install -e ".[dev]"
+uv sync --group dev --group docs
 ```
 
 ## Troubleshooting

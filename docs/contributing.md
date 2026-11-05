@@ -48,17 +48,15 @@ source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 
 # Install in development mode
-pip install -e .[dev]
+uv sync --group dev --group docs
 
-# Or using uv
-uv pip install -e .[dev]
 ```
 
 ### Verify Installation
 
 ```bash
 # Check installation
-pyragify --version
+pyragify --help
 
 # Run tests
 pytest
@@ -109,7 +107,7 @@ pyragify process-repo --help
 mkdir test-repo
 cd test-repo
 echo "def test(): pass" > test.py
-pyragify --repo-path . --verbose
+pyragify process-repo --repo-path . --verbose
 ```
 
 ### 5. Update Documentation
@@ -408,7 +406,7 @@ Pyragify uses [semantic versioning](https://semver.org/):
 ### Creating a Release
 
 1. Update version in `pyproject.toml`
-2. Update `CHANGELOG.md`
+2. Update `docs/changelog.md`
 3. Create git tag
 4. Push to GitHub
 5. GitHub Actions will create release
@@ -432,7 +430,7 @@ Pyragify uses [semantic versioning](https://semver.org/):
 
 Contributors are recognized in:
 - GitHub contributor statistics
-- CHANGELOG.md entries
+- docs/changelog.md entries
 - Release notes
 
 ## Getting Help

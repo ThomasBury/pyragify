@@ -26,7 +26,7 @@ for path in module_files:
 
     with mkdocs_gen_files.open(full_doc_path, "w") as fd:
         print(f"::: {identifier}", file=fd)
-    mkdocs_gen_files.set_edit_path(full_doc_path, path.relative_to(root))
+    mkdocs_gen_files.set_edit_path(full_doc_path, Path("..") / path.relative_to(root))
 
 # 3) Now build an index.md for each package directory
 package_dirs = set()
@@ -40,7 +40,7 @@ for path in module_files:
 
 for rel_pkg in sorted(package_dirs):
     index_doc = Path("reference", rel_pkg) / "index.md"
-    mkdocs_gen_files.set_edit_path(index_doc, src / rel_pkg)  # enable “edit on GitHub”
+    mkdocs_gen_files.set_edit_path(index_doc, Path("../scripts/gen_ref_pages.py"))
     with mkdocs_gen_files.open(index_doc, "w") as fd:
         # Title (optional)
         fd.write(f"# `{rel_pkg}` package\n\n")

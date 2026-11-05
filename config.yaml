@@ -21,11 +21,3 @@ verbose: false
 graph:
   enabled: true  # Set to true to enable graph building
   output_dir: "./graphs"  # Directory to save graph files
-  format: "json"  # Graph serialization format (json, graphml)
-  relationships:  # Types of relationships to extract
-    - "imports"
-    - "calls"
-    - "inherits"
-    - "references"
-  max_depth: 5  # Maximum depth for relationship traversal
-  compression: true  # Enable graph compression for large repositories

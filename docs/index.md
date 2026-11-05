@@ -204,12 +204,12 @@ See our [Contributing Guide](contributing.md) for detailed instructions.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+This project is licensed under the Unlicense - see the [LICENSE](https://github.com/ThomasBury/pyragify/blob/main/LICENSE) file for details.
 
 ---
 
 <div style="text-align: center; margin-top: 2rem;">
   <a href="getting-started/installation/" class="md-button md-button--primary">Get Started</a>
-  <a href="user-guide/basic-usage/" class="md-button">User Guide</a>
+  <a href="user-guide/cli-reference/" class="md-button">User Guide</a>
   <a href="https://github.com/ThomasBury/pyragify" class="md-button">GitHub</a>
 </div>

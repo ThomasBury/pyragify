@@ -125,12 +125,13 @@ tree -a output/
 output/
 ├── graphs/
 │   └── repository_graph.json
+├── .pyragify-artifacts.json
 ├── .pyragify-cache.json
 ├── hashes.json
 ├── metadata.json
 ├── python/
 │   └── chunk_0.txt
-└── remaining/
+└── other/
     └── chunk_0.txt
 ```
 
@@ -271,7 +272,7 @@ graph:
 EOF
 
 # Process the repository
-pyragify --config-file config.yaml
+pyragify process-repo --config-file config.yaml
 ```
 
 ### Customize Processing

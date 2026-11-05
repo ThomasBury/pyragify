@@ -5,8 +5,8 @@
 **Transform your code repositories into LLM-ready context for NotebookLM and other AI assistants.**
 
 [![PyPI version](https://badge.fury.io/py/pyragify.svg)](https://pypi.org/project/pyragify/)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9–3.12](https://img.shields.io/badge/python-3.9--3.12-blue.svg)](https://www.python.org/downloads/)
+[![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](LICENSE)
 
 [📖 Full Documentation](https://thomasbury.github.io/pyragify/) • [🐛 Issues](https://github.com/ThomasBury/pyragify/issues) • [💡 Discussions](https://github.com/ThomasBury/pyragify/discussions)
 
@@ -73,7 +73,7 @@ We welcome contributions! See our [Contributing Guide](https://thomasbury.github
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Unlicense - see the [LICENSE](LICENSE) file for details.
 
 ---
 

@@ -10,6 +10,7 @@ After processing, Pyragify creates this output structure:
 output/
 ├── graphs/                    # Knowledge graph files
 │   └── repository_graph.json
+├── .pyragify-artifacts.json   # Owned chunk inventory
 ├── .pyragify-cache.json       # Incremental processing cache
 ├── hashes.json               # Current file hashes
 ├── metadata.json             # Processing metadata
@@ -32,7 +33,7 @@ output/
 
 Each Python chunk follows this structure:
 
-```
+````text
 --- File: src/main.py Type: function Name: calculate_total Lines: 10-25 ---
 ### Function: `calculate_total`
 
@@ -46,7 +47,7 @@ def calculate_total(items, tax_rate=0.1):
     subtotal = sum(item.price for item in items)
     return subtotal * (1 + tax_rate)
 ```
-```
+````
 
 **Components:**
 - **Header**: File path, chunk type, name, line numbers
@@ -56,7 +57,7 @@ def calculate_total(items, tax_rate=0.1):
 
 ### Class Chunks
 
-```
+````text
 --- File: src/main.py Type: class Name: ShoppingCart Lines: 30-60 ---
 ### Class: `ShoppingCart`
 
@@ -88,11 +89,11 @@ class ShoppingCart:
         """Remove all items."""
         self.items.clear()
 ```
-```
+````
 
 ### Markdown Files
 
-```
+````text
 --- File: README.md Type: markdown Header: # Installation Lines: 1-15 ---
 ### # Installation
 
@@ -108,7 +109,7 @@ This section covers installation instructions.
 ```bash
 pip install pyragify
 ```
-```
+````
 
 ## Metadata Files
 
@@ -355,10 +356,10 @@ Pyragify uses a versioned per-file cache to avoid reprocessing unchanged source 
 ```bash
 # Force reprocessing
 rm output/.pyragify-cache.json
-pyragify --config-file config.yaml
+pyragify process-repo --config-file config.yaml
 
 # Check what changed
-pyragify --verbose --config-file config.yaml
+pyragify process-repo --verbose --config-file config.yaml
 ```
 
 ## Troubleshooting Output Issues
@@ -373,7 +374,7 @@ pyragify --verbose --config-file config.yaml
 grep "filename" output/metadata.json
 
 # Enable verbose logging
-pyragify --verbose --config-file config.yaml
+pyragify process-repo --verbose --config-file config.yaml
 
 # Check skip patterns
 cat config.yaml | grep skip
@@ -401,7 +402,7 @@ skip_patterns:
 ```bash
 # Ensure UTF-8 encoding
 export PYTHONIOENCODING=utf-8
-pyragify --config-file config.yaml
+pyragify process-repo --config-file config.yaml
 
 # Check file encoding
 file output/python/chunk_0.txt
@@ -424,7 +425,7 @@ jobs:
       - name: Process with Pyragify
         run: |
           pip install pyragify
-          pyragify --repo-path . --enable-graph
+          pyragify process-repo --repo-path . --enable-graph
       - name: Upload chunks
         uses: actions/upload-artifact@v3
         with:

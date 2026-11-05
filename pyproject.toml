@@ -11,7 +11,7 @@ license = {text = "The Unlicense"}
 keywords = ["code-processing", "chunking", "repository-analysis", "notebookLM"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: The Unlicense (Unlicense)",
     "Operating System :: OS Independent"
 ]
 dependencies = [
