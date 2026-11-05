@@ -1331,11 +1331,7 @@ class GraphQuery:
             List of matching nodes
         """
         matching_nodes = []
-        try:
-            regex = re.compile(pattern, re.IGNORECASE)
-        except re.error as e:
-            self.logger.error(f"Invalid regex pattern: {e}")
-            return []
+        regex = re.compile(pattern, re.IGNORECASE)
 
         for node in self.graph.nodes.values():
             if node_types and node.type not in node_types:

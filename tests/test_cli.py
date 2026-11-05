@@ -145,3 +145,29 @@ def test_query_graph_invalid_command_does_not_echo_exit_code(tmp_path):
     assert result.exit_code == 1
     assert "Unknown command 'unknown'" in result.output
     assert "Error: 1" not in result.output
+
+
+def test_query_graph_invalid_regex_fails(tmp_path):
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps({"nodes": {}, "edges": []}))
+    result = CliRunner().invoke(app, ["query-graph", "--graph-path", str(graph_path),
+                                     "--command", "search", "--pattern", "["])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+
+
+def test_related_text_includes_reverse_relationship(tmp_path):
+    from pyragify.graph import GraphEdge, GraphNode, KnowledgeGraph
+    graph = KnowledgeGraph()
+    for name in ("caller", "callee"):
+        graph.add_node(GraphNode(id=name, type="function", name=name,
+                                 file="app.py", language="python"))
+    graph.add_edge(GraphEdge(source="caller", target="callee", type="calls"))
+    path = tmp_path / "graph.json"
+    path.write_text(json.dumps(graph.to_dict()))
+    result = CliRunner().invoke(app, ["query-graph", "--graph-path", str(path),
+                                     "--command", "related", "--entity", "callee",
+                                     "--output-format", "text"])
+    assert result.exit_code == 0, result.output
+    assert "caller (function)" in result.output
+    assert "Relationships: calls" in result.output

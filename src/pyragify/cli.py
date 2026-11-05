@@ -42,7 +42,7 @@ def process_repo(
     graph_output_dir: str = typer.Option(None, help="Override: Directory to save graph files."),
     graph_format: str = typer.Option(None, help="Override: Graph serialization format (only json is supported)."),
     include_relationships: list[str] = typer.Option(None, help="Unsupported: relationship filtering is not implemented.")
-):
+) -> None:
     """
     Process a repository and output its content to text files with a specified word limit.
 
@@ -173,7 +173,7 @@ def query_graph(
     depth: int = typer.Option(2, help="Traversal depth for related context."),
     pattern: str = typer.Option(None, help="Search pattern for pattern matching."),
     output_format: str = typer.Option("json", help="Output format (json, text).")
-):
+) -> None:
     """
     Query the knowledge graph for context and relationships.
 
@@ -240,7 +240,8 @@ def query_graph(
             else:
                 typer.echo(f"Related context for {entity}:")
                 for chunk in results:
-                    typer.echo(f"  {chunk.node.name} ({chunk.node.type}) - Score: {chunk.relevance_score:.2f}")
+                    relationships = " -> ".join(chunk.relationship_path)
+                    typer.echo(f"  {chunk.node.name} ({chunk.node.type}) - Score: {chunk.relevance_score:.2f} - Relationships: {relationships}")
 
         elif command == "hierarchy":
             if not entity:
