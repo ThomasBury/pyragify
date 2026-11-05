@@ -16,7 +16,7 @@ pyragify process-repo --repo-path ./my-project --output-dir ./output --enable-gr
 | `--output-dir PATH` | Override text output; defaults to `./output` |
 | `--max-words INTEGER` | Target words per output file; oversized chunks can exceed it |
 | `--max-file-size INTEGER` | Maximum source file size in bytes; default 10485760 |
-| `--skip-patterns TEXT` | Add a skip pattern; repeat the option for multiple patterns |
+| `--skip-patterns TEXT` | Override configured skip patterns; repeat for multiple patterns |
 | `--skip-dirs TEXT` | Override skipped directory names; repeat for multiple names |
 | `--verbose` / `--no-verbose` | Override verbose logging |
 | `--enable-graph` / `--no-enable-graph` | Override graph building |

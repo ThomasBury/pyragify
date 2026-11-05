@@ -48,7 +48,7 @@ source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 
 # Install in development mode
-uv sync --group dev --group docs
+uv sync --active --group dev --group docs
 
 ```
 

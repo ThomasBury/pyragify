@@ -56,9 +56,6 @@ pip install -e .
 After installation, verify that Pyragify is working:
 
 ```bash
-# Check version
-pyragify --help
-
 # View help
 pyragify --help
 ```
@@ -78,25 +75,23 @@ Commands:
   query-graph   Query the knowledge graph for context and relationships.
 ```
 
-## Optional Dependencies
+## Parser Dependencies
 
-Pyragify works out of the box, but you can enhance its capabilities with optional dependencies:
+Tree-sitter and its bundled grammars are installed with Pyragify. The package
+constrains them to compatible versions; do not upgrade the parser independently.
 
-### Tree-sitter Support
-
-For advanced parsing of JavaScript, TypeScript, Java, and C/C++ files:
+For a source checkout containing `pyproject.toml` and `uv.lock`, install the
+locked dependencies from the checkout root:
 
 ```bash
-# These are included by default, but you can ensure they're installed
 uv sync --locked
 ```
 
-!!! note "Tree-sitter Compatibility"
-    Currently, there are version compatibility issues between `tree-sitter` and `tree-sitter-languages` packages. Pyragify gracefully falls back to regex-based parsing when tree-sitter parsing fails.
+This command is for repository development, not for a standalone pip installation.
 
 ### Development Dependencies
 
-If you plan to contribute to Pyragify:
+From the root of a source checkout:
 
 ```bash
 uv sync --group dev --group docs

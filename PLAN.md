@@ -187,6 +187,8 @@ Second PR review follow-up (2026-11-05):
 
 Third PR review follow-up (2026-11-05): inheritance edges originate at each scoped subclass, and context traversal carries the actual edge type in either direction, including filtered parallel edges. **98 tests pass on Python 3.9 and 3.12**.
 
+Final CodeRabbit follow-up (2026-11-05): text queries include relationship paths; invalid search regular expressions fail instead of returning empty success. Development setup respects the activated environment, cache removal follows the configured output directory, and installation instructions distinguish source checkouts. **100 tests pass on Python 3.9 and 3.12**, and the docs build passes. Codex cleared commit `7492b2a` before this follow-up; the final head is submitted for another review.
+
 ### M2 — One useful handoff, with a reuse decision first: next milestone
 
 First compare Repomix against this repository, one small Python application, and a mixed-language fixture containing Unicode and deliberately oversized files. Check retained source, provenance, file selection, readable navigation, and limits. Record concrete unmet requirements.

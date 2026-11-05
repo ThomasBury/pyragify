@@ -55,8 +55,8 @@ Repeat list options rather than joining values with commas. See the
 
 Unchanged files reuse versioned cached chunks and graph data. Exports are rebuilt
 from all current records, including unchanged files. Deleted sources disappear.
-To force reprocessing, remove `output/.pyragify-cache.json` and run the same
-command again. `hashes.json` is an inspection artifact, not the processing cache.
+To force reprocessing, remove `.pyragify-cache.json` from your configured
+`output_dir` and run the same command again. `hashes.json` is an inspection artifact, not the processing cache.
 
 ## Safe paths and export failures
 
