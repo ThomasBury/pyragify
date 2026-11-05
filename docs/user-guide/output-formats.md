@@ -76,7 +76,7 @@ for item in manifest["processed_files"]:
 ```
 
 `hashes.json` repeats source hashes for inspection. `.pyragify-cache.json` version
-4 stores source blocks, metadata, and optional graph records for reuse. Removing
+5 stores source blocks, metadata, and optional graph records for reuse. Removing
 it forces reprocessing. `.pyragify-artifacts.json` lists owned parts for safe
 cleanup. On upgrade, owned legacy `.txt` parts are removed; unlisted old parts
 are left for manual inspection. Consumers of the earlier semantic chunks must

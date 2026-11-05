@@ -144,7 +144,7 @@ DEFAULT_SKIP_PATTERNS = [
     "*.svg",
 ]
 
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 CACHE_FILENAME = ".pyragify-cache.json"
 MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
 
@@ -557,7 +557,7 @@ class FileProcessor:
         except (OSError, UnicodeError) as e:
             logger.warning(f"Error reading file {file_path}: {e}")
             return ([], 0, None) if include_graph else ([], 0)
-        line_count = content.count("\n") + int(bool(content) and not content.endswith("\n"))
+        line_count = sum(1 for _ in StringIO(content, newline=None))
         chunks = [{"type": "file", "name": file_path.name, "content": content,
                    "start_line": 1 if content else 0, "end_line": line_count}]
 

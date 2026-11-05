@@ -64,6 +64,50 @@ def test_complete_source_and_manifest(tmp_path, enable_graph):
     assert "`````markdown" in markdown  # Source fences cannot close the enclosing block.
 
 
+@pytest.mark.parametrize("source, expected_lines", [
+    (b"", 0),
+    (b"a = 1", 1),
+    (b"a = 1\n", 1),
+    (b"a = 1\r", 1),
+    (b"a = 1\r\n", 1),
+    (b"a = 1\rb = 2", 2),
+    (b"a = 1\rb = 2\r", 2),
+    (b"a = 1\r\nb = 2\rc = 3\nd = 4\r\n", 4),
+    ('value = "a\u2028b"'.encode("utf-8"), 1),
+])
+def test_universal_newline_ranges_preserve_bytes(tmp_path, source, expected_lines):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_bytes(source)
+    output = tmp_path / "output"
+    RepoContentProcessor(repo, output).process_repo()
+    item = check_handoff(repo, output)["processed_files"][0]
+    assert item["lines"] == expected_lines
+    assert item["output"]["end_line"] == expected_lines
+    start = 1 if source else 0
+    part = (output / item["output"]["part"]).read_text()
+    assert f"Lines: {start}-{expected_lines}\n" in part
+    assert f"lines {start}-{expected_lines};" in (output / "index.md").read_text()
+
+
+def test_previous_cache_with_incorrect_line_range_is_reprocessed(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_bytes(b"a = 1\rb = 2")
+    output = tmp_path / "output"
+    RepoContentProcessor(repo, output).process_repo()
+    path = output / ".pyragify-cache.json"
+    cache = json.loads(path.read_text())
+    cache["version"] = 4
+    cache["files"]["app.py"]["metadata"]["lines"] = 1
+    cache["files"]["app.py"]["chunks"][0]["end_line"] = 1
+    path.write_text(json.dumps(cache))
+    RepoContentProcessor(repo, output).process_repo()
+    manifest = check_handoff(repo, output)
+    assert manifest["reused_files"] == []
+    assert manifest["processed_files"][0]["lines"] == 2
+
+
 def test_clean_incremental_deleted_and_changed_sources_agree(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
