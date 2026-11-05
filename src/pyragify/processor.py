@@ -1,47 +1,56 @@
 import ast
+import codecs
 import hashlib
 import json
+import re
 import tokenize
 import pathspec
 import logging
+import os
+import shutil
+import subprocess
+import tempfile
 from io import StringIO
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
+from os import cpu_count
 from collections import defaultdict
+from typing import Optional, Dict, Any, Tuple, List, Union
 from pyragify.utils import validate_directory
+from pyragify.graph import (
+    GraphBuilder,
+    KnowledgeGraph,
+    TREE_SITTER_AVAILABLE,
+    get_tree_sitter_language_and_parser,
+    tree_sitter_match_captures,
+)
+
+# Tree-sitter imports (conditionally imported for type hinting)
+try:
+    from tree_sitter import Language, Node
+except ImportError:
+    # Define dummy types for type hinting if tree-sitter is not available
+    class Language: pass
+    class Node: pass
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 def save_json(data: dict, file_path: Path, description: str):
-    """
-    Save a dictionary to a JSON file with error handling.
-
-    Parameters
-    ----------
-    data : dict
-        The data to be saved as a JSON file.
-    file_path : pathlib.Path
-        The path where the JSON file should be saved.
-    description : str
-        A description of the file being saved, used in logging messages.
-
-    Raises
-    ------
-    Exception
-        If an error occurs during saving, it will be logged but not raised.
-
-    Notes
-    -----
-    This function logs both successful saves and any errors encountered.
-    """
-
+    """Atomically save JSON; serialization and filesystem errors propagate."""
+    temporary = None
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=file_path.parent,
+                                         delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(data, stream, indent=4)
+        os.replace(temporary, file_path)
         logger.info(f"{description} saved to {file_path}")
-    except Exception as e:
-        logger.error(f"Error saving {description}: {e}")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 def compute_file_hash(file_path: Path) -> str:
     """
@@ -78,34 +87,12 @@ def compute_file_hash(file_path: Path) -> str:
     return hash_md5.hexdigest()
 
 def load_json(file_path: Path, description: str) -> dict:
-    """
-    Load a JSON file into a dictionary with error handling.
-
-    Parameters
-    ----------
-    file_path : pathlib.Path
-        The path to the JSON file to be loaded.
-    description : str
-        A description of the file being loaded, used in logging messages.
-
-    Returns
-    -------
-    dict
-        The contents of the JSON file as a dictionary. Returns an empty dictionary if the file cannot be loaded.
-
-    Raises
-    ------
-    Exception
-        If an error occurs during file loading, it will be logged but not raised.
-    """
-
-    if file_path.exists():
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading {description}: {e}")
-    return {}
+    """Load a required JSON object; invalid or missing inputs raise an error."""
+    with file_path.open(encoding="utf-8") as stream:
+        data = json.load(stream)
+    if not isinstance(data, dict):
+        raise ValueError(f"{description} must contain a JSON object")
+    return data
 
 def is_documentation_file(file_path: Path) -> bool:
     """
@@ -135,12 +122,56 @@ FILE_TYPE_MAP = {
     ".ts": "typescript",
     ".java": "java",
     ".cpp": "cpp",
+    ".go": "go",
     ".c": "c",
     ".html": "html",
     ".css": "css",
     ".md": "markdown",
     ".markdown": "markdown"
 }
+
+DEFAULT_SKIP_PATTERNS = [
+    ".git",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.bmp",
+    "*.webp",
+    "*.ico",
+    "*.svg",
+]
+
+CACHE_VERSION = 3
+CACHE_FILENAME = ".pyragify-cache.json"
+MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
+
+MARKDOWN_HEADER_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
+MARKDOWN_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def is_probably_binary_file(file_path: Path, sample_size: int = 2048) -> bool:
+    """Heuristically detect binary files so they can be skipped before decoding."""
+    try:
+        with open(file_path, "rb") as file:
+            sample = file.read(sample_size + 1)
+            complete = len(sample) <= sample_size
+            sample = sample[:sample_size]
+    except OSError:
+        return False
+
+    if not sample:
+        return False
+
+    if b"\x00" in sample:
+        return True
+
+    try:
+        codecs.getincrementaldecoder("utf-8")().decode(sample, final=complete)
+    except UnicodeDecodeError:
+        return True
+
+    return False
 
 def read_file_in_chunks(file_path: Path, chunk_size: int = 4096):
     """
@@ -167,6 +198,56 @@ def read_file_in_chunks(file_path: Path, chunk_size: int = 4096):
         while chunk := file.read(chunk_size):
             yield chunk
 
+def _process_file_worker(task_args: tuple[str, str, str, bool, Optional[Dict[str, Any]]]) -> Optional[Tuple[str, str, dict, list, Optional[Dict[str, Any]]]]:
+    """
+    Worker function to process a single file in a separate process.
+
+    This function is designed to be called by a ProcessPoolExecutor. It computes
+    the file's hash, chunks its content using a FileProcessor, and returns
+    all necessary metadata and content for aggregation.
+
+    Parameters
+    ----------
+    task_args : tuple[str, str, str, bool, Optional[Dict[str, Any]]]
+        A tuple containing (file_path, repo_path, output_dir, enable_graph, graph_config).
+
+    Returns
+    -------
+    tuple[str, str, dict, list, Optional[Dict[str, Any]]] or None
+        A tuple containing (relative_path, new_hash, file_metadata, chunks, graph_dict) on success,
+        or None if an error occurs during processing.
+    """
+    file_path_str, repo_path_str, output_dir_str, enable_graph, graph_config = task_args
+    file_path = Path(file_path_str)
+    repo_path = Path(repo_path_str)
+    output_dir = Path(output_dir_str)
+
+    try:
+        new_hash = compute_file_hash(file_path)
+        if not new_hash:
+            logger.warning(f"Worker failed to compute hash for {file_path}")
+            return None
+
+        # Each worker needs its own FileProcessor
+        file_processor = FileProcessor(repo_path, output_dir, enable_graph=enable_graph, graph_config=graph_config)
+        chunks, line_count, graph = file_processor.chunk_file(file_path, include_graph=True)
+
+        if not chunks and line_count == 0 and file_path.stat().st_size:  # Empty files are valid.
+            logger.warning(f"Worker failed to chunk file {file_path}")
+            return None
+
+        relative_path = str(file_path.relative_to(repo_path))
+        total_words = sum(len(file_processor.format_chunk(chunk, relative_path).split()) for chunk in chunks)
+        file_metadata = {"path": relative_path, "chunks": len(chunks), "size": file_path.stat().st_size, "lines": line_count, "words": total_words}
+
+        # Convert graph to dict for serialization (or None if no graph)
+        graph_dict = graph.to_dict() if graph else None
+
+        return (relative_path, new_hash, file_metadata, chunks, graph_dict)
+    except Exception as e:
+        logger.error(f"Unhandled exception in worker for file {file_path}: {e}")
+        return None
+
 class FileProcessor:
     """
     Class for handling file processing logic.
@@ -190,12 +271,22 @@ class FileProcessor:
         Chunk a file into semantic sections based on its type.
     """
 
-    def __init__(self, repo_path: Path, output_dir: Path):
+    def __init__(self, repo_path: Path, output_dir: Path,
+                 enable_graph: bool = False, graph_config: Optional[Dict[str, Any]] = None):
         self.repo_path = repo_path.resolve()
         self.output_dir = output_dir.resolve()
         validate_directory(self.output_dir)
 
-    def format_chunk(self, chunk: dict) -> str:
+        # Graph building configuration
+        self.enable_graph = enable_graph
+        self.graph_config = graph_config or {}
+        self.graph_builder = None
+
+        if self.enable_graph:
+            self.graph_builder = GraphBuilder(self.repo_path)
+            logger.info("Graph building enabled for FileProcessor")
+
+    def format_chunk(self, chunk: dict, file_path: str) -> str:
         """
         Format a chunk into plain text for saving.
 
@@ -203,6 +294,8 @@ class FileProcessor:
         ----------
         chunk : dict
             The chunk of content to format.
+        file_path : str
+            The relative path of the file the chunk belongs to.
 
         Returns
         -------
@@ -210,25 +303,64 @@ class FileProcessor:
             A formatted plain-text representation of the chunk.
         """
         chunk_type = chunk.get("type", "unknown")
-        if chunk_type == "function":
-            docstring = f"\nDocstring:\n{chunk['docstring']}" if chunk.get('docstring') else ""
-            return f"Function: {chunk.get('name')}{docstring}\nCode:\n{chunk.get('code')}"
-        elif chunk_type == "class":
-            docstring = f"\nDocstring:\n{chunk['docstring']}" if chunk.get('docstring') else ""
-            return f"Class: {chunk.get('name')}{docstring}\nCode:\n{chunk.get('code')}"
-        elif chunk_type == "comments":
-            comments = "\n".join(f"Line {c['line']}: {c['text']}" for c in chunk.get("content", []))
-            return f"Comments:\n{comments}"
-        elif chunk_type == "file":
-            return f"File: {chunk.get('name')}\nContent:\n{chunk.get('content', '')}"
-        elif chunk_type == "html_script":
-            return f"HTML Script:\n{chunk.get('content', '')}"
-        elif chunk_type == "html_style":
-            return f"HTML Style:\n{chunk.get('content', '')}"
-        elif chunk_type == "css_rule":
-            return f"CSS Rule:\n{chunk.get('content', '')}"
+        name = chunk.get("name")
+        start_line = chunk.get("start_line")
+        end_line = chunk.get("end_line")
+        lines_str = f"{start_line}-{end_line}" if start_line and end_line else None
+
+        # Helper to create a metadata header
+        def create_header(display_type: str):
+            parts = ["---", f"File: {file_path}", f"Type: {display_type}"]
+            if name:
+                parts.append(f"Name: {name}")
+            if chunk_type == "markdown" and chunk.get("header"):
+                parts.append(f"Header: {chunk['header']}")
+            if lines_str:
+                parts.append(f"Lines: {lines_str}")
+            return "\n".join(parts) + "\n---\n\n"
+
+        # Generic code chunk formatting
+        if "code" in chunk:
+            docstring = chunk.get("docstring")
+            code = chunk.get("code", "")
+            lang = FILE_TYPE_MAP.get(Path(file_path).suffix, chunk_type.split('_')[0])
+            display_type = chunk_type.replace('_', ' ').title()
+
+            header = create_header(display_type)
+            title = f"### {display_type}: `{name}`\n\n"
+            docstring_md = f"**Docstring:**\n> {docstring}\n\n" if docstring else ""
+            code_md = f"**Code:**\n```{lang}\n{code.strip()}\n```"
+            return f"{header}{title}{docstring_md}{code_md}"
+
+        # Fallback for content-based chunks (like full files or markdown sections)
+        elif "content" in chunk:
+            content = chunk.get("content", "")
+            suffix = Path(file_path).suffix
+            lang = FILE_TYPE_MAP.get(suffix, "text")
+            if chunk_type == "file":
+                display_type = "File Content"
+            elif chunk_type == "markdown":
+                display_type = "Markdown Section"
+            else:
+                display_type = chunk_type.replace('_', ' ').title()
+            header = create_header(display_type)
+            title = f"### {chunk.get('name') or chunk.get('header') or display_type}\n\n"
+
+            # Handle different content types
+            if isinstance(content, list):
+                # For comments or other list-based content
+                if chunk_type == "comments":
+                    content_md = "\n".join(f"- Line {c['line']}: {c['text']}" for c in content)
+                else:
+                    content_md = "\n".join(str(item) for item in content)
+            else:
+                # For string content
+                content_md = f"```{lang}\n{content.strip()}\n```" if chunk_type == "file" else content.strip()
+
+            return f"{header}{title}{content_md}"
+
         else:
-            return f"Unknown chunk type:\n{chunk}"
+            return f"---\nFile: {file_path}\nType: {chunk_type.title()}\n---\n\n{chunk}"
 
     def chunk_python_file(self, file_path: Path) -> tuple[list, int]:
         """
@@ -265,21 +397,24 @@ class FileProcessor:
             # Extract functions and classes using AST
             tree = ast.parse(file_content, filename=file_path)
             for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     func_name = node.name
                     code_snippet = ast.get_source_segment(file_content, node)
                     chunks.append({
                         "type": "function",
                         "name": func_name,
                         "docstring": ast.get_docstring(node),
-                        "code": code_snippet
+                        "code": code_snippet,
+                        "start_line": node.lineno,
+                        "end_line": node.end_lineno,
                     })
                 elif isinstance(node, ast.ClassDef):
+                    if not hasattr(node, 'end_lineno'): continue # Skip nodes without end line info
                     class_name = node.name
                     code_snippet = ast.get_source_segment(file_content, node)
                     methods = []
                     for class_node in node.body:
-                        if isinstance(class_node, ast.FunctionDef):
+                        if isinstance(class_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             method_name = class_node.name
                             methods.append({
                                 "name": method_name,
@@ -289,7 +424,9 @@ class FileProcessor:
                         "name": class_name,
                         "methods": methods,
                         "docstring": ast.get_docstring(node),
-                        "code": code_snippet
+                        "code": code_snippet,
+                        "start_line": node.lineno,
+                        "end_line": node.end_lineno,
                     })
 
             # Extract inline comments using tokenize
@@ -305,7 +442,7 @@ class FileProcessor:
                         "text": comment_text
                     })
             if comments:
-                chunks.append({"type": "comments", "content": comments})
+                chunks.append({"type": "comments", "name": "Comments", "content": comments})
 
         except Exception as e:
             logger.warning(f"Error chunking Python file {file_path}: {e}")
@@ -338,12 +475,33 @@ class FileProcessor:
                 lines = f.readlines()
             line_count = len(lines)
     
-            current_chunk = {"header": None, "content": ""}
-            for line in lines:
-                if line.startswith("#"):  # Header
+            current_chunk = {"type": "markdown", "header": None, "name": file_path.stem, "content": ""}
+            heading_stack: List[str] = []
+            in_code_block = False
+
+            for line_number, line in enumerate(lines, start=1):
+                if MARKDOWN_FENCE_RE.match(line):
+                    in_code_block = not in_code_block
+                    current_chunk["content"] += line
+                    continue
+
+                header_match = MARKDOWN_HEADER_RE.match(line) if not in_code_block else None
+                if header_match:
                     if current_chunk["header"] or current_chunk["content"].strip():
                         chunks.append(current_chunk)
-                    current_chunk = {"header": line.strip(), "content": ""}
+
+                    level = len(header_match.group(1))
+                    title = header_match.group(2).strip()
+                    heading_stack = heading_stack[:level - 1]
+                    heading_stack.append(title)
+
+                    current_chunk = {
+                        "type": "markdown",
+                        "header": line.strip(),
+                        "name": " > ".join(heading_stack),
+                        "content": "",
+                        "start_line": line_number,
+                    }
                 else:
                     current_chunk["content"] += line
             if current_chunk["header"] or current_chunk["content"].strip():
@@ -352,7 +510,11 @@ class FileProcessor:
             logger.warning(f"Error chunking Markdown file {file_path}: {e}")
         return chunks, line_count if 'line_count' in locals() else 0
 
-    def chunk_file(self, file_path: Path) -> tuple[list, int]:
+    def chunk_file(
+        self,
+        file_path: Path,
+        include_graph: bool = False,
+    ) -> Union[Tuple[List[Dict[str, Any]], int], Tuple[List[Dict[str, Any]], int, Optional[KnowledgeGraph]]]:
         """
         Chunk a file into semantic sections based on its type.
 
@@ -363,34 +525,117 @@ class FileProcessor:
 
         Returns
         -------
-        tuple[list, int]
-            A tuple containing a list of chunks and the total number of lines in the file.
+        Tuple[List[Dict[str, Any]], int, Optional[KnowledgeGraph]]
+            A tuple containing:
+            - List of chunks (dict)
+            - Total number of lines in the file (int)
+            - Knowledge graph for the file (optional, only if graph building is enabled)
 
         Notes
         -----
-        This method delegates to type-specific chunking methods based on the file extension. 
+        This method delegates to type-specific chunking methods based on the file extension.
         For unsupported types, the entire file content is treated as a single chunk.
+        If graph building is enabled, a knowledge graph is also constructed.
         """
         suffix = file_path.suffix
+        language = FILE_TYPE_MAP.get(suffix, "unknown")
+
+        # Get chunks using existing logic
         if suffix == ".py":
-            return self.chunk_python_file(file_path)
+            chunks, line_count = self.chunk_python_file(file_path)
         elif suffix in [".md", ".markdown"]:
-            return self.chunk_markdown_file(file_path)
+            chunks, line_count = self.chunk_markdown_file(file_path)
         elif suffix in FILE_TYPE_MAP:
-            return self.chunk_tree_sitter_file(file_path, suffix)
+            chunks, line_count = self.chunk_tree_sitter_file(file_path, suffix)
         else:
             try:
                 content = file_path.read_text(encoding="utf-8")
                 line_count = content.count('\n') + 1
-                return ([{
+                chunks = [{
                     "type": "file",
                     "name": file_path.name,
                     "content": content
-                }], line_count)
+                }]
             except Exception as e:
                 logger.warning(f"Error reading file {file_path}: {e}")
-                return [], 0
+                chunks, line_count = [], 0
 
+        # Build graph if enabled
+        graph = None
+        if self.enable_graph and self.graph_builder:
+            try:
+                graph = self.graph_builder.build_from_chunks(file_path, chunks, language)
+
+                # Extract additional dependencies from file content
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    dependencies = self.graph_builder.extract_dependencies(file_path, content, language)
+                    self.graph_builder.add_dependency_edges(graph, file_path, language, dependencies)
+                except Exception as e:
+                    logger.warning(f"Error extracting dependencies from {file_path}: {e}")
+
+                logger.debug(f"Built knowledge graph for {file_path} with {len(graph.nodes)} nodes and {len(graph.edges)} edges")
+            except Exception as e:
+                logger.warning(f"Error building graph for {file_path}: {e}")
+
+        if include_graph:
+            return chunks, line_count, graph
+        return chunks, line_count
+
+    def _query_tree_sitter(self, language: Language, root_node: Node, source: str, query_str: str, chunk_type: str) -> list[dict[str, str]]:
+        """
+        Run a tree-sitter query and create code chunks from the matches.
+
+        This helper function executes a given tree-sitter query against a parsed
+        source code tree. For each match, it extracts the relevant code segment
+        and an associated name (if available), then packages them into a
+        dictionary representing a code chunk.
+
+        Parameters
+        ----------
+        language : Language
+            The tree-sitter language object used for the query.
+        root_node : Node
+            The root node of the parsed source code's abstract syntax tree.
+        source : str
+            The original source code as a string, used to extract code snippets.
+        query_str : str
+            The S-expression-based query string to run against the tree.
+        chunk_type : str
+            A string label to assign to the 'type' key of the created chunks.
+
+        Returns
+        -------
+        list[dict[str, str]]
+            A list of dictionaries, where each dictionary is a chunk containing
+            'type', 'name', and 'code' keys. Returns an empty list if an
+            error occurs or no matches are found.
+        """
+        chunks = []
+        try:
+            query = language.query(query_str)
+            for match in query.matches(root_node):
+                match_captures = tree_sitter_match_captures(query, match)
+
+                name_node = match_captures.get('name')
+                name = name_node.text.decode('utf8') if name_node else "anonymous"
+
+                main_node = None
+                for key, node in match_captures.items():
+                    if key != 'name':
+                        main_node = node
+                        break  # Found the main node
+                if not main_node:
+                    continue
+
+                code = main_node.text.decode("utf-8")
+                chunks.append({
+                    "type": chunk_type, "name": name, "code": code,
+                    "start_line": main_node.start_point[0] + 1, "end_line": main_node.end_point[0] + 1
+                })
+        except Exception as e:
+            logger.warning(f"Error in tree-sitter query for {chunk_type}: {e}")
+        return chunks
 
     def chunk_tree_sitter_file(self, file_path: Path, suffix: str) -> tuple[list, int]:
         """
@@ -418,30 +663,89 @@ class FileProcessor:
             lang_name = FILE_TYPE_MAP[suffix]
 
             chunks = []
-            if lang_name == "html":
-                # Simple regex fallback for tags
-                import re
-                scripts = re.findall(r'<script[^>]*>(.*?)</script>', source, re.DOTALL | re.IGNORECASE)
-                for script in scripts:
-                    chunks.append({"type": "html_script", "content": script.strip()})
-                styles = re.findall(r'<style[^>]*>(.*?)</style>', source, re.DOTALL | re.IGNORECASE)
-                for style in styles:
-                    chunks.append({"type": "html_style", "content": style.strip()})
-                if not chunks:
-                    chunks = [{"type": "html", "content": source}]
 
-            # CSS: Chunk by rules
-            elif lang_name == "css":
-                import re
-                rules = re.split(r'([@][^{]+{[^}]*}|{[^{}]*})', source)
-                for rule in rules:
-                    if rule.strip() and '{' in rule:
-                        chunks.append({"type": "css_rule", "content": rule.strip()})
-                if not chunks:
-                    chunks = [{"type": "css", "content": source}]
+            # Try tree-sitter parsing first
+            if TREE_SITTER_AVAILABLE:
+                try:
+                    language, parser = get_tree_sitter_language_and_parser(lang_name)
+                    tree = parser.parse(bytes(source, "utf8"))
+                    root_node = tree.root_node
 
+                    if lang_name in ["javascript", "typescript"]:
+                        chunks.extend(self._query_tree_sitter(language, root_node, source,
+                            "(function_declaration name: (identifier) @name) @function_declaration", "javascript_function"))
+                        class_name_type = "type_identifier" if lang_name == "typescript" else "identifier"
+                        chunks.extend(self._query_tree_sitter(language, root_node, source,
+                            f"(class_declaration name: ({class_name_type}) @name) @class_declaration", "javascript_class"))
+                        chunks.extend(self._query_tree_sitter(language, root_node, source,
+                            "(arrow_function) @arrow_function", "javascript_arrow_function"))
+
+                    elif lang_name == "java":
+                        chunks.extend(self._query_tree_sitter(language, root_node, source,
+                            "(method_declaration name: (identifier) @name) @method_declaration", "java_method"))
+                        chunks.extend(self._query_tree_sitter(language, root_node, source,
+                            "(class_declaration name: (identifier) @name) @class_declaration", "java_class"))
+
+                    elif lang_name in ["cpp", "c"]:
+                        chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                        (function_definition
+                          declarator: (function_declarator
+                            declarator: (identifier) @name
+                          )
+                        ) @function_definition
+                        ''', "cpp_function"))
+
+                        # Struct/Class for C++
+                        if lang_name == "cpp":
+                            chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                                (struct_specifier name: (type_identifier) @name) @struct_specifier
+                            ''', "cpp_struct"))
+                            chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                                (class_specifier name: (type_identifier) @name) @class_specifier
+                            ''', "cpp_class"))
+                    
+                    elif lang_name == "go":
+                        chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                            (function_declaration
+                              name: (identifier) @name
+                            ) @function_declaration
+                        ''', "go_function"))
+                        chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                            (type_declaration
+                              (type_spec name: (type_identifier) @name)
+                            ) @type
+                        ''', "go_type"))
+
+                except Exception as e:
+                    logger.warning(f"Tree-sitter parsing failed for {lang_name}: {e}")
+
+            # Fallback to regex for HTML/CSS or if tree-sitter failed
             if not chunks:
-                chunks = [{"type": "file", "name": file_path.name, "content": source}]
+                if lang_name == "html":
+                    # Simple regex fallback for tags
+                    import re
+                    scripts = re.findall(r'<script[^>]*>(.*?)</script>', source, re.DOTALL | re.IGNORECASE)
+                    for script in scripts:
+                        chunks.append({"type": "html_script", "content": script.strip()})
+                    styles = re.findall(r'<style[^>]*>(.*?)</style>', source, re.DOTALL | re.IGNORECASE)
+                    for style in styles:
+                        chunks.append({"type": "html_style", "content": style.strip()})
+                    if not chunks:
+                        chunks = [{"type": "html", "content": source}]
+
+                # CSS: Chunk by rules
+                elif lang_name == "css":
+                    import re
+                    rules = re.split(r'([@][^{]+{[^}]*}|{[^{}]*})', source)
+                    for rule in rules:
+                        if rule.strip() and '{' in rule:
+                            chunks.append({"type": "css_rule", "content": rule.strip()})
+                    if not chunks:
+                        chunks = [{"type": "css", "content": source}]
+
+                else:
+                    # For other languages, fall back to full file content
+                    chunks = [{"type": "file", "name": file_path.name, "content": source}]
 
             return chunks, line_count
         except Exception as e:
@@ -476,7 +780,7 @@ class RepoContentProcessor:
     content : str
         The current content being accumulated for a chunk.
     hashes : dict
-        Cached file hashes to avoid reprocessing unchanged files.
+        Current source file hashes saved for inspection.
     file_counter : collections.defaultdict
         Counter for output files by type.
     metadata : dict
@@ -485,7 +789,7 @@ class RepoContentProcessor:
     Methods
     -------
     load_ignore_patterns()
-        Load ignore patterns from .gitignore and .dockerignore files.
+        Load root .dockerignore and configured skip patterns.
     should_skip(file_path)
         Determine if a file or directory should be skipped.
     save_chunk(chunk, subdir)
@@ -500,30 +804,262 @@ class RepoContentProcessor:
         Determine the output subdirectory for a file based on its type.
     """
 
-    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None):
+    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None, enable_graph: bool = False, graph_config: Optional[Dict[str, Any]] = None):
         self.repo_path = repo_path.resolve()
-        self.output_dir = output_dir.resolve()
+        self.output_dir = self._validate_output_path(output_dir)
+        self.graph_config = graph_config or {}
+        unsupported = set(self.graph_config) - {"enabled", "output_dir", "format"}
+        if enable_graph and (unsupported or self.graph_config.get("format", "json") != "json"):
+            raise ValueError("Only JSON graph output is supported; unsupported settings: "
+                             f"{sorted(unsupported) or ['format']}")
+        self.graph_output_dir = self._validate_output_path(
+            self.output_dir / self.graph_config.get("output_dir", "graphs")
+        ) if enable_graph else None
+        self._gitignore_specs = {}
         self.max_words = max_words
         self.max_file_size = max_file_size
-        self.skip_patterns = skip_patterns or [".git"]
+        self.skip_patterns = list(dict.fromkeys(DEFAULT_SKIP_PATTERNS + (skip_patterns or [])))
         self.skip_dirs = skip_dirs or ["node_modules", "__pycache__"]
         self.ignore_patterns = self.load_ignore_patterns()
-        self.current_word_count = 0
-        self.content = ""
-        self.hashes = load_json(self.output_dir / "hashes.json", "hashes")
+        self.current_word_counts = defaultdict(int)
+        self.content_buffers = defaultdict(str)
+        self.hashes = {}
+        self.cache_path = self.output_dir / CACHE_FILENAME
+        self._reject_symlinks(self.cache_path)
+        try:
+            self.file_cache = load_json(self.cache_path, "File cache")
+        except FileNotFoundError:
+            self.file_cache = {}
+        except (OSError, ValueError):
+            logger.warning("Invalid optional cache; processing source again")
+            self.file_cache = {}
         self.file_counter = defaultdict(int)
-        self.metadata = {
-            "processed_files": [],
-            "skipped_files": [],
-            "summary": {"total_files_processed": 0, "total_words": 0}
-        }
-        self.file_processor = FileProcessor(self.repo_path, self.output_dir)
+        self.metadata = self._empty_metadata()
+
+        # Graph-related attributes
+        self.enable_graph = enable_graph
+        self.graph_config = graph_config or {}
+        self.repo_graph = None
+        self.all_file_graphs = []  # Store all individual file graphs
+
+        if self.enable_graph:
+            from pyragify.graph import KnowledgeGraph
+            self.repo_graph = KnowledgeGraph()
+            logger.info("Repository graph building enabled")
+
+        self.file_processor = FileProcessor(self.repo_path, self.output_dir, enable_graph=enable_graph, graph_config=graph_config)
 
         validate_directory(self.output_dir)
 
+    @staticmethod
+    def _empty_metadata() -> dict:
+        return {
+            "processed_files": [],
+            "skipped_files": [],
+            "failed_files": [],
+            "summary": {"total_files_processed": 0, "total_words": 0}
+        }
+
+    def _reset_run_state(self) -> None:
+        self.current_word_counts = defaultdict(int)
+        self.content_buffers = defaultdict(str)
+        self.file_counter = defaultdict(int)
+        self.metadata = self._empty_metadata()
+        self.all_file_graphs = []
+        if self.enable_graph:
+            self.repo_graph = KnowledgeGraph()
+
+    def _cache_files(self) -> dict:
+        if self.file_cache.get("version") != CACHE_VERSION:
+            return {}
+        files = self.file_cache.get("files", {})
+        return files if isinstance(files, dict) else {}
+
+    def _is_cache_record_usable(self, record: dict, current_hash: str, relative_path: str) -> bool:
+        if not isinstance(record, dict):
+            return False
+        if record.get("hash") != current_hash:
+            return False
+
+        metadata = record.get("metadata")
+        if not isinstance(metadata, dict) or metadata.get("path") != relative_path:
+            return False
+        if not isinstance(record.get("chunks"), list):
+            return False
+        if self.enable_graph:
+            try:
+                KnowledgeGraph.from_dict(record.get("graph"))
+            except (TypeError, ValueError, AttributeError):
+                return False
+        return True
+
+    @staticmethod
+    def _reject_symlinks(path: Path) -> None:
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            raise ValueError(f"Symlinked output paths are unsafe: {path}")
+
+    def _validate_output_path(self, path: Path) -> Path:
+        path = Path(os.path.abspath(path))
+        self._reject_symlinks(path)
+        if path == self.repo_path or path in self.repo_path.parents:
+            raise ValueError("Output must not equal or contain the source repository")
+        return path
+
+    def _is_inside_output_dir(self, file_path: Path) -> bool:
+        return any(root == file_path or root in file_path.parents
+                   for root in (self.output_dir, self.graph_output_dir) if root is not None)
+
+    def _discover_files(self):
+        try:
+            git = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse",
+                                  "--is-inside-work-tree"], capture_output=True)
+        except FileNotFoundError:
+            git = None
+        if git is not None and git.returncode == 0 and git.stdout.strip() == b"true":
+            result = subprocess.run(
+                ["git", "-C", str(self.repo_path), "ls-files", "--cached", "--others",
+                 "--exclude-standard", "-z"], capture_output=True, check=True)
+            for name in sorted(set(result.stdout.split(b"\0")) - {b""}):
+                yield self.repo_path / os.fsdecode(name)
+            return
+
+        def walk_error(error):
+            raise error
+
+        for directory, dirs, files in os.walk(self.repo_path, followlinks=False, onerror=walk_error):
+            root = Path(directory)
+            kept = []
+            for name in sorted(dirs):
+                path = root / name
+                if self._is_inside_output_dir(path):
+                    continue
+                if self.should_skip(path):
+                    self.metadata["skipped_files"].append({
+                        "path": str(path.relative_to(self.repo_path)), "reason": "Excluded directory"})
+                else:
+                    kept.append(name)
+            dirs[:] = kept
+            for name in sorted(files):
+                yield root / name
+
+    def _matches_gitignore(self, path: Path) -> bool:
+        ignored = False
+        for directory in reversed((path.parent, *path.parent.parents)):
+            if directory != self.repo_path and self.repo_path not in directory.parents:
+                continue
+            if directory not in self._gitignore_specs:
+                ignore = directory / ".gitignore"
+                self._gitignore_specs[directory] = pathspec.PathSpec.from_lines(
+                    "gitwildmatch", ignore.read_text(encoding="utf-8").splitlines()
+                    if ignore.is_file() and not ignore.is_symlink() else [])
+            relative = path.relative_to(directory).as_posix() + ("/" if path.is_dir() else "")
+            for pattern in self._gitignore_specs[directory].patterns:
+                if pattern.include is not None and pattern.match_file(relative):
+                    ignored = pattern.include
+        return ignored
+
+    def _publish_output(self, stage: Path) -> None:
+        """Publish prepared artifacts, restoring previous files on a write failure."""
+        manifest_path = self.output_dir / ".pyragify-artifacts.json"
+        self._reject_symlinks(manifest_path)
+        previous = load_json(manifest_path, "Artifact list") if manifest_path.exists() else {}
+        old_chunks = previous.get("chunks", [])
+        if not isinstance(old_chunks, list) or any(
+            not isinstance(name, str) or not re.fullmatch(
+                r"(?:" + "|".join(MANAGED_OUTPUT_SUBDIRS) + r")/chunk_\d+\.txt", name)
+            for name in old_chunks
+        ):
+            raise ValueError("Invalid owned artifact list")
+        chunks = sorted(str(path.relative_to(stage)) for path in stage.glob("*/chunk_*.txt"))
+        save_json({"chunks": chunks}, stage / manifest_path.name, "Artifact list")
+        replacements = {self.output_dir / path.relative_to(stage): path
+                        for path in stage.rglob("*") if path.is_file()}
+        if self.enable_graph:
+            del replacements[self.output_dir / "repository_graph.json"]
+            replacements[self.graph_output_dir / "repository_graph.json"] = stage / "repository_graph.json"
+        destinations = set(replacements) | {self.output_dir / name for name in old_chunks}
+        for destination in destinations:
+            self._reject_symlinks(destination)
+            if destination.exists() and not destination.is_file():
+                raise ValueError(f"Artifact destination is not a file: {destination}")
+        # shortcut: rollback covers raised errors, add a journal before supporting crash recovery.
+        backups = {}
+        published = []
+        try:
+            for destination in sorted(destinations):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists():
+                    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
+                        backup = Path(stream.name)
+                    backups[destination] = backup
+                    shutil.copy2(destination, backup)
+                else:
+                    backups[destination] = None
+                if destination in replacements:
+                    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
+                        temporary = Path(stream.name)
+                    try:
+                        shutil.copyfile(replacements[destination], temporary)
+                        os.replace(temporary, destination)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+                else:
+                    destination.unlink()
+                published.append(destination)
+        except Exception:
+            for destination in reversed(published):
+                backup = backups[destination]
+                if backup is None:
+                    destination.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, destination)
+            raise
+        finally:
+            for backup in backups.values():
+                if backup is not None:
+                    backup.unlink(missing_ok=True)
+
+    def _record_processed_metadata(self, active_records: dict[str, dict]) -> None:
+        processed_files = []
+        total_words = 0
+
+        for relative_path in sorted(active_records):
+            metadata = active_records[relative_path]["metadata"]
+            processed_files.append(metadata)
+            total_words += metadata.get("words", 0)
+
+        self.metadata["processed_files"] = processed_files
+        self.metadata["summary"] = {
+            "total_files_processed": len(processed_files),
+            "total_words": total_words,
+        }
+
+    def _write_text_output(self, active_records: dict[str, dict]) -> None:
+        for relative_path in sorted(active_records):
+            record = active_records[relative_path]
+            subdir = self.get_file_type_subdir(Path(relative_path))
+            for chunk in record["chunks"]:
+                self.save_chunk(chunk, subdir, relative_path)
+
+        for subdir in list(self.content_buffers.keys()):
+            self.save_content(subdir)
+
+    def _rebuild_graph_from_records(self, active_records: dict[str, dict]) -> None:
+        if not self.enable_graph or not self.repo_graph:
+            return
+
+        for relative_path in sorted(active_records):
+            graph_dict = active_records[relative_path].get("graph")
+            if not graph_dict:
+                continue
+            file_graph = KnowledgeGraph.from_dict(graph_dict)
+            self.all_file_graphs.append(file_graph)
+            self.repo_graph.merge(file_graph)
+            logger.debug(f"Merged cached graph for {relative_path} into repository graph")
+
     def load_ignore_patterns(self) -> pathspec.PathSpec:
         """
-        Load patterns from .gitignore and .dockerignore files if they exist.
+        Load root .dockerignore and configured skip patterns.
 
         Returns
         -------
@@ -538,9 +1074,9 @@ class RepoContentProcessor:
 
         ignore_patterns = []
 
-        for ignore_file in [".gitignore", ".dockerignore"]:
+        for ignore_file in [".dockerignore"]:
             file_path = self.repo_path / ignore_file
-            if file_path.exists():
+            if file_path.exists() and not file_path.is_symlink():
                 logger.info(f"Loading ignore patterns from {ignore_file}")
                 with open(file_path, "r", encoding="utf-8") as f:
                     ignore_patterns.extend(f.readlines())
@@ -570,29 +1106,47 @@ class RepoContentProcessor:
         This method checks against ignore patterns and explicit directory or file size limits.
         """
 
-        # Check if the path matches .gitignore or .dockerignore patterns
         relative_path = file_path.relative_to(self.repo_path)
-        if self.ignore_patterns.match_file(str(relative_path)):
-            logger.info(f"Skipping {relative_path} due to ignore pattern.")
+        if any(part.is_symlink() for part in (file_path, *file_path.parents)):
+            return True
+        if self._matches_gitignore(file_path):
+            return True
+
+        # Skip files contained in explicitly skipped directories.
+        if any(part in self.skip_dirs for part in relative_path.parts[:-1]):
+            logger.debug(f"Skipped path inside configured skip directory: {file_path}")
+            return True
+
+        # Check if the path matches .gitignore or .dockerignore patterns
+        if self.ignore_patterns.match_file(relative_path.as_posix() + ("/" if file_path.is_dir() else "")):
+            logger.debug(f"Skipping {relative_path} due to ignore pattern.")
             return True
 
         # Skip directories explicitly listed
         if file_path.is_dir() and file_path.name in self.skip_dirs:
-            logger.info(f"Skipped directory: {file_path}")
+            logger.debug(f"Skipped directory: {file_path}")
             return True
 
         # Skip large files
         if file_path.is_file() and file_path.stat().st_size > self.max_file_size:
             self.metadata["skipped_files"].append({
-                "path": str(file_path),
+                "path": str(file_path.relative_to(self.repo_path)),
                 "reason": "File exceeds size limit"
             })
-            logger.info(f"Skipped file due to size: {file_path}")
+            logger.debug(f"Skipped file due to size: {file_path}")
+            return True
+
+        if file_path.is_file() and is_probably_binary_file(file_path):
+            self.metadata["skipped_files"].append({
+                "path": str(file_path.relative_to(self.repo_path)),
+                "reason": "Binary or image file"
+            })
+            logger.debug(f"Skipped binary/image file: {file_path}")
             return True
 
         return False
 
-    def save_chunk(self, chunk: dict, subdir: Path):
+    def save_chunk(self, chunk: dict, subdir: Path, file_path: str):
         """
         Save a chunk of content to a text file.
 
@@ -602,13 +1156,15 @@ class RepoContentProcessor:
             The chunk of content to save.
         subdir : pathlib.Path
             The subdirectory where the chunk should be saved.
+        file_path : str
+            The relative path of the file the chunk belongs to.
         """
-        formatted = self.file_processor.format_chunk(chunk)
+        formatted = self.file_processor.format_chunk(chunk, file_path)
         chunk_word_count = len(formatted.split())
-        if self.current_word_count + chunk_word_count > self.max_words:
+        if self.current_word_counts[subdir] + chunk_word_count > self.max_words:
             self.save_content(subdir)
-        self.content += formatted + "\n\n"
-        self.current_word_count += chunk_word_count
+        self.content_buffers[subdir] += formatted + "\n\n"
+        self.current_word_counts[subdir] += chunk_word_count
 
 
     def save_content(self, subdir: Path):
@@ -643,152 +1199,143 @@ class RepoContentProcessor:
             If the file cannot be created or written, an error is logged.
         """
 
-        if self.content:
+        if self.content_buffers[subdir]:
             file_path = self.output_dir / subdir / f"chunk_{self.file_counter[subdir]}.txt"
             file_path.parent.mkdir(parents=True, exist_ok=True)
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write(self.content)
+                f.write(self.content_buffers[subdir])
             logger.info(f"Saved chunk to {file_path}")
             self.file_counter[subdir] += 1
-            self.content = ""
-            self.current_word_count = 0
+            self.content_buffers[subdir] = ""
+            self.current_word_counts[subdir] = 0
             
-    def process_file(self, file_path: Path):
-        """
-        Process a single file.
-
-        This method handles the processing of a single file by checking its hash for changes, chunking its content, and saving the resulting chunks.
-        Metadata about the processed file is updated, and any errors are logged.
-
-        Parameters
-        ----------
-        file_path : pathlib.Path
-            The path to the file to be processed.
-
-        Notes
-        -----
-        - Files that have unchanged hashes (compared to the cached hashes) are skipped.
-        - Skipped files are logged in the `metadata['skipped_files']` list with reasons for skipping.
-        - Processed files are chunked based on their type, and each chunk is saved to the appropriate subdirectory.
-        - Metadata about processed files, such as the number of chunks, file size, number of lines, and total words, is recorded.
-
-        Raises
-        ------
-        Exception
-            Any errors encountered during file processing are logged and added to the skipped files list, but do not halt execution.
-
-        Examples
-        --------
-        To process a file:
-            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
-            >>> processor.process_file(Path("repo/example.py"))
-        """
-
-        try:
-            current_hash = compute_file_hash(file_path)
-            if not current_hash:
-                self.metadata["skipped_files"].append({"path": str(file_path), "reason": "Error computing file hash"})
-                logger.warning(f"Skipped file due to hash error: {file_path}")
-                return
-
-            relative_path = str(file_path.relative_to(self.repo_path))
-            if relative_path in self.hashes and self.hashes[relative_path] == current_hash:
-                self.metadata["skipped_files"].append({"path": relative_path, "reason": "Unchanged file (hash match)"})
-                logger.info(f"Skipped unchanged file: {file_path}")
-                return
-
-            subdir = self.get_file_type_subdir(file_path)
-            chunks, line_count = self.file_processor.chunk_file(file_path)
-            for chunk in chunks:
-                self.save_chunk(chunk, subdir)
-
-            self.metadata["processed_files"].append({
-                "path": relative_path,
-                "chunks": len(chunks),
-                "size": file_path.stat().st_size,
-                "lines": line_count,
-                "words": sum(len(self.file_processor.format_chunk(chunk).split()) for chunk in chunks)
-            })
-            self.metadata["summary"]["total_files_processed"] += 1
-            self.metadata["summary"]["total_words"] += sum(len(self.file_processor.format_chunk(chunk).split()) for chunk in chunks)
-            self.hashes[relative_path] = current_hash
-        except Exception as e:
-            logger.warning(f"Error processing file {file_path}: {e}")
-            self.metadata["skipped_files"].append({"path": str(file_path), "reason": f"Error processing file: {e}"})
-
     def process_repo(self):
         """
-        Process all files in the repository.
+        Process all files in the repository in parallel.
 
-        This method iterates over all files in the specified repository directory. It skips files and directories 
-        based on ignore patterns and file size limits, processes supported file types, and saves the results. 
-        Metadata about processed and skipped files is recorded, and the final results are saved to the output directory.
-
-        Notes
-        -----
-        - Files are processed based on their type (e.g., Python files, Markdown files).
-        - Skipped files and directories are logged in the `metadata['skipped_files']`.
-        - Processed files are chunked, and their metadata is updated in `metadata['processed_files']`.
-        - All metadata and hash information is saved to the output directory at the end of processing.
-
-        Parameters
-        ----------
-        None
-
-        Raises
-        ------
-        Exception
-            Errors during individual file processing are logged and added to the skipped files list, but do not halt execution.
-
-        Examples
-        --------
-        To process a repository:
-            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
-            >>> processor.process_repo()
-
-        Metadata Example:
-            After processing, metadata is saved as JSON:
-            {
-                "processed_files": [
-                    {
-                        "path": "example.py",
-                        "chunks": 3,
-                        "size": 2048,
-                        "lines": 50,
-                        "words": 300
-                    }
-                ],
-                "skipped_files": [
-                    {
-                        "path": ".git/config",
-                        "reason": "Matches ignore pattern"
-                    }
-                ],
-                "summary": {
-                    "total_files_processed": 10,
-                    "total_words": 5000
-                }
-            }
+        The per-file cache avoids re-chunking unchanged files, but output is
+        always rebuilt from the complete cached model so incremental runs do
+        not drop unchanged files from the generated model.
         """
-
         logger.info(f"Processing repository: {self.repo_path}")
-        total_files = sum(1 for _ in self.repo_path.rglob("*"))
-        file_count = 0
+        self._reset_run_state()
+        self._gitignore_specs.clear()
 
-        for file_path in self.repo_path.rglob("*"):
-            file_count += 1
-            logger.info(f"Processing file {file_count}/{total_files}: {file_path}")
+        # 1. Discover files and decide which ones need fresh processing.
+        logger.info("Discovering and filtering files...")
+        active_records = {}
+        cache_files = self._cache_files()
+        files_to_process = []
+
+        for file_path in self._discover_files():
+            if not file_path.is_symlink() and not file_path.is_file():
+                continue
+            if self._is_inside_output_dir(file_path):
+                logger.debug(f"Skipped generated output artifact: {file_path}")
+                continue
             if self.should_skip(file_path):
+                relative_path = str(file_path.relative_to(self.repo_path))
+                if not any(entry["path"] == relative_path for entry in self.metadata["skipped_files"]):
+                    self.metadata["skipped_files"].append({"path": relative_path, "reason": "Skipped by pattern or size"})
                 continue
 
-            if file_path.is_file():
-                self.process_file(file_path)
+            current_hash = compute_file_hash(file_path)
+            if not current_hash:
+                self.metadata["failed_files"].append({"path": str(file_path.relative_to(self.repo_path)), "reason": "Error computing file hash"})
+                logger.warning(f"Skipped file due to hash error: {file_path}")
+                continue
 
-        save_json(self.metadata, self.output_dir / "metadata.json", "Metadata")
-        save_json(self.hashes, self.output_dir / "hashes.json", "Hashes")
+            relative_path = str(file_path.relative_to(self.repo_path))
+            cache_record = cache_files.get(relative_path)
+            if self._is_cache_record_usable(cache_record, current_hash, relative_path):
+                active_records[relative_path] = cache_record
+                self.metadata["skipped_files"].append({"path": relative_path, "reason": "Unchanged file (hash match)"})
+                logger.debug(f"Reused cached chunks for unchanged file: {file_path}")
+                continue
 
-        if self.content:
-            self.save_content(Path("remaining"))
+            files_to_process.append(file_path)
+
+        if not files_to_process:
+            logger.info("No new or modified files to process.")
+        else:
+            logger.info(f"Found {len(files_to_process)} new or modified files to process.")
+            # 2. Process new or modified files in parallel.
+            tasks = [(str(fp), str(self.repo_path), str(self.output_dir), self.enable_graph, self.graph_config) for fp in files_to_process]
+            with ProcessPoolExecutor(max_workers=cpu_count()) as executor:
+                results = executor.map(_process_file_worker, tasks)
+                for i, result in enumerate(results):
+                    source_path = files_to_process[i]
+                    relative_source_path = str(source_path.relative_to(self.repo_path))
+                    if result is None:
+                        logger.warning("A worker failed to process a file.")
+                        self.metadata["failed_files"].append({"path": relative_source_path, "reason": "Error processing file"})
+                        continue
+
+                    relative_path, new_hash, file_metadata, chunks, graph_dict = result
+                    logger.info(f"Aggregating results for {relative_path} ({i + 1}/{len(files_to_process)})")
+                    active_records[relative_path] = {
+                        "hash": new_hash,
+                        "metadata": file_metadata,
+                        "chunks": chunks,
+                        "graph": graph_dict,
+                    }
+
+        if self.metadata["failed_files"]:
+            raise RuntimeError(f"Source processing failed: {self.metadata['failed_files']}")
+
+        # 3. Rebuild aggregate output from every active source record.
+        self.hashes = {
+            relative_path: record["hash"]
+            for relative_path, record in sorted(active_records.items())
+        }
+        self._record_processed_metadata(active_records)
+        self._rebuild_graph_from_records(active_records)
+
+        # 4. Resolve cross-file references
+        if self.enable_graph and self.repo_graph and self.all_file_graphs:
+            try:
+                from pyragify.graph import GraphBuilder
+                graph_builder = GraphBuilder(self.repo_path)
+                graph_builder.graph = self.repo_graph
+                graph_builder.resolve_cross_file_references(self.all_file_graphs)
+                logger.info("Cross-file reference resolution completed")
+
+                # Validate and repair the graph
+                validation_results = graph_builder.validate_graph()
+                if not validation_results["is_valid"] or validation_results["warnings"]:
+                    logger.info("Graph validation found issues, attempting repair...")
+                    graph_builder.repair_graph(validation_results)
+
+                    # Re-validate after repair
+                    final_validation = graph_builder.validate_graph()
+                    if final_validation["is_valid"]:
+                        logger.info("Graph repair successful")
+                    else:
+                        logger.warning("Some graph issues could not be repaired")
+
+            except Exception as e:
+                logger.warning(f"Failed to resolve cross-file references: {e}")
+
+        # 5. Save final state
+        self.file_cache = {"version": CACHE_VERSION, "files": active_records}
+
+        with tempfile.TemporaryDirectory(prefix=".pyragify-stage-", dir=self.output_dir) as directory:
+            stage = Path(directory)
+            output_dir = self.output_dir
+            try:
+                self.output_dir = stage
+                self._write_text_output(active_records)
+            finally:
+                self.output_dir = output_dir
+            if self.enable_graph and self.repo_graph:
+                graph_dict = self.repo_graph.to_dict()
+                save_json(graph_dict, stage / "repository_graph.json", "Repository graph")
+                self.metadata["graph"] = graph_dict["metadata"].copy()
+                self.metadata["graph"]["output_path"] = str(self.graph_output_dir / "repository_graph.json")
+            save_json(self.metadata, stage / "metadata.json", "Metadata")
+            save_json(self.hashes, stage / "hashes.json", "Hashes")
+            save_json(self.file_cache, stage / CACHE_FILENAME, "File cache")
+            self._publish_output(stage)
 
         logger.info("Repository processing complete.")
 
