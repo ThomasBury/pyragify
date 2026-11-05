@@ -185,6 +185,8 @@ Second PR review follow-up (2026-11-05):
 - Inactive graph settings are rejected; configuration examples now use supported settings. Documentation corrects CLI syntax, installation groups, partial extraction, license metadata, generated edit paths, and unsupported project-status claims.
 - The test workflow token has read-only contents access. The docs build passes; API pages outside navigation remain informational notices, and the broken LICENSE link is fixed.
 
+Third PR review follow-up (2026-11-05): inheritance edges originate at each scoped subclass, and context traversal carries the actual edge type in either direction, including filtered parallel edges. **98 tests pass on Python 3.9 and 3.12**.
+
 ### M2 — One useful handoff, with a reuse decision first: next milestone
 
 First compare Repomix against this repository, one small Python application, and a mixed-language fixture containing Unicode and deliberately oversized files. Check retained source, provenance, file selection, readable navigation, and limits. Record concrete unmet requirements.

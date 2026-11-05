@@ -154,3 +154,33 @@ def test_many_unnamed_chunks_have_unique_ids(tmp_path):
     path.write_text("a {} b {} c {} d {}")
     graph = GraphBuilder(tmp_path).build_from_chunks(path, [{"type": "css_rule", "content": "{}"}] * 5, "css")
     assert len([node for node in graph.nodes.values() if node.type == "css_rule"]) == 5
+
+
+def test_inheritance_connects_each_scoped_subclass(tmp_path):
+    graph = build(tmp_path, "app.py", """
+class Outer:
+    class Base: pass
+    class First(Base): pass
+    class Second(Base): pass
+""")
+    edges = {(edge.source, edge.target) for edge in graph.edges if edge.type == "inherits"}
+    assert edges == {("app.py::Outer.First", "app.py::Outer.Base"),
+                     ("app.py::Outer.Second", "app.py::Outer.Base")}
+    related = GraphQuery(graph).find_related_context("app.py::Outer.First", 1, ["inherits"])
+    assert [(item.node.id, item.relationship_path) for item in related] == [
+        ("app.py::Outer.Base", ["inherits"])]
+
+
+@pytest.mark.parametrize("relationship", ["contains", "calls"])
+def test_reverse_context_retains_traversed_relationship(tmp_path, relationship):
+    from pyragify.graph import GraphEdge, GraphNode, KnowledgeGraph
+    graph = KnowledgeGraph()
+    for name in ("source", "target"):
+        graph.add_node(GraphNode(id=name, type="function", name=name, file="app.py", language="python"))
+    graph.add_edge(GraphEdge(source="source", target="target", type="references"))
+    graph.add_edge(GraphEdge(source="source", target="target", type=relationship))
+    related = GraphQuery(graph).find_related_context("target", 1, [relationship])
+    assert len(related) == 1
+    assert related[0].node.id == "source"
+    assert related[0].relationship_path == [relationship]
+    assert GraphQuery(graph).find_related_context("target", 1, []) == []

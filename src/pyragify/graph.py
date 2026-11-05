@@ -319,7 +319,7 @@ class GraphBuilder:
             return self._file_node_id(file_path)
         if not node_id.startswith(("function::", "class::", "struct::", "method::")):
             return node_id
-        enclosing = self._find_enclosing_function_node_id(graph, file_path, line)
+        enclosing = self._find_enclosing_node_id(graph, file_path, line)
         scope = graph.nodes[enclosing].metadata.get("qualified_name", "") if enclosing else ""
         symbol = node_id.split("::", 1)[1]
         if node_id.startswith("method::") and "." in symbol:
@@ -332,17 +332,18 @@ class GraphBuilder:
         return self._lookup_local_node_id(
             graph, symbol, scope, skip_classes=not node_id.startswith("method::")) or node_id
 
-    def _find_enclosing_function_node_id(
-        self, graph: KnowledgeGraph, file_path: Path, line: Optional[int]
+    def _find_enclosing_node_id(
+        self, graph: KnowledgeGraph, file_path: Path, line: Optional[int],
+        node_types: Set[str] = FUNCTION_NODE_TYPES,
     ) -> Optional[str]:
-        """Find the smallest function-like node covering a source line."""
+        """Find the smallest node of the requested types covering a source line."""
         if line is None:
             return None
 
         relative_path = self._relative_path(file_path)
         candidates = []
         for node_id, node in graph.nodes.items():
-            if not is_function_like_node(node) or node.file != relative_path:
+            if node.type not in node_types or node.file != relative_path:
                 continue
             if node.line_start is None or node.line_end is None:
                 continue
@@ -398,7 +399,15 @@ class GraphBuilder:
             source = self._normalize_reference_id(graph, file_path, edge.source, line)
             target = self._normalize_reference_id(graph, file_path, edge.target, line)
             if edge.type == "calls":
-                source = self._find_enclosing_function_node_id(graph, file_path, line) or file_node_id
+                source = self._find_enclosing_node_id(graph, file_path, line) or file_node_id
+            elif edge.type == "inherits":
+                subclass = self._find_enclosing_node_id(
+                    graph, file_path, line, {"class", "java_class", "javascript_class", "cpp_class"})
+                if subclass:
+                    source = subclass
+                    scope = graph.nodes[subclass].metadata["qualified_name"].rpartition(".")[0]
+                    symbol = edge.target.split("::", 1)[-1]
+                    target = self._lookup_local_node_id(graph, symbol, scope) or target
 
             edge.source = source
             edge.target = target
@@ -1175,11 +1184,17 @@ class GraphQuery:
 
             # Add neighbors to queue
             if current_depth < depth:
-                neighbors = self.graph.get_neighbors(current_id, relationship_types)
-                for neighbor_id in neighbors:
+                for edge in self.graph.edges:
+                    if relationship_types is not None and edge.type not in relationship_types:
+                        continue
+                    if edge.source == current_id:
+                        neighbor_id = edge.target
+                    elif edge.target == current_id:
+                        neighbor_id = edge.source
+                    else:
+                        continue
                     if neighbor_id not in visited:
-                        new_path = path + [self._get_relationship_type(current_id, neighbor_id)]
-                        queue.put((neighbor_id, current_depth + 1, new_path))
+                        queue.put((neighbor_id, current_depth + 1, path + [edge.type]))
 
         # Sort by relevance score
         context_chunks.sort(key=lambda x: x.relevance_score, reverse=True)
@@ -1338,10 +1353,3 @@ class GraphQuery:
                     break
 
         return matching_nodes
-
-    def _get_relationship_type(self, source_id: str, target_id: str) -> str:
-        """Get the relationship type between two nodes."""
-        for edge in self.graph.edges:
-            if edge.source == source_id and edge.target == target_id:
-                return edge.type
-        return "unknown"
