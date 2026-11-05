@@ -431,8 +431,11 @@ class GraphBuilder:
                 name = Path(file_path).name
         else:
             node_id = f"{file_path}::{qualified}" if name else f"{file_path}::{chunk_type}_{start_line}"
-            if node_id in graph.nodes:
-                node_id += f"@{start_line}"
+            base_id = node_id
+            counter = 1
+            while node_id in graph.nodes:
+                node_id = f"{base_id}@{start_line}#{counter}"
+                counter += 1
 
         # Create node
         node = GraphNode(
@@ -495,7 +498,7 @@ class GraphBuilder:
                 # Extract include statements
                 include_query = """
                 (preproc_include
-                  path: (string_literal) @include_path
+                  path: [(string_literal) (system_lib_string)] @include_path
                 )
                 """
 
@@ -546,7 +549,7 @@ class GraphBuilder:
                             file_id: str, edges: List[GraphEdge], content: str) -> None:
         """Process tree-sitter captures for C/C++."""
         if query_type == "include" and "include_path" in captures:
-            include_path = content[captures["include_path"].start_byte:captures["include_path"].end_byte].strip('<>"')
+            include_path = captures["include_path"].text.decode("utf-8").strip('<>"')
             edges.append(GraphEdge(
                 source=file_id,
                 target=f"header::{include_path}",
@@ -554,7 +557,7 @@ class GraphBuilder:
                 metadata={"line": captures["include_path"].start_point[0] + 1}
             ))
         elif query_type == "call" and "function_name" in captures:
-            func_name = content[captures["function_name"].start_byte:captures["function_name"].end_byte]
+            func_name = captures["function_name"].text.decode("utf-8")
             edges.append(GraphEdge(
                 source=file_id,
                 target=f"function::{func_name}",
@@ -562,7 +565,7 @@ class GraphBuilder:
                 metadata={"line": captures["function_name"].start_point[0] + 1}
             ))
         elif query_type == "struct" and "struct_name" in captures:
-            struct_name = content[captures["struct_name"].start_byte:captures["struct_name"].end_byte]
+            struct_name = captures["struct_name"].text.decode("utf-8")
             # Note: C/C++ doesn't have inheritance for structs, but we can track them
             edges.append(GraphEdge(
                 source=file_id,
@@ -571,7 +574,7 @@ class GraphBuilder:
                 metadata={"line": captures["struct_name"].start_point[0] + 1}
             ))
         elif query_type == "class" and "class_name" in captures:
-            class_name = content[captures["class_name"].start_byte:captures["class_name"].end_byte]
+            class_name = captures["class_name"].text.decode("utf-8")
             edges.append(GraphEdge(
                 source=file_id,
                 target=f"class::{class_name}",
@@ -656,7 +659,7 @@ class GraphBuilder:
                              file_id: str, edges: List[GraphEdge], content: str) -> None:
         """Process tree-sitter captures for Java."""
         if query_type == "import" and "import_path" in captures:
-            import_path = content[captures["import_path"].start_byte:captures["import_path"].end_byte]
+            import_path = captures["import_path"].text.decode("utf-8")
             edges.append(GraphEdge(
                 source=file_id,
                 target=f"package::{import_path}",
@@ -664,7 +667,7 @@ class GraphBuilder:
                 metadata={"line": captures["import_path"].start_point[0] + 1}
             ))
         elif query_type == "method_call" and "method_name" in captures:
-            method_name = content[captures["method_name"].start_byte:captures["method_name"].end_byte]
+            method_name = captures["method_name"].text.decode("utf-8")
             edges.append(GraphEdge(
                 source=file_id,
                 target=f"method::{method_name}",
@@ -672,9 +675,9 @@ class GraphBuilder:
                 metadata={"line": captures["method_name"].start_point[0] + 1}
             ))
         elif query_type == "class" and "class_name" in captures:
-            class_name = content[captures["class_name"].start_byte:captures["class_name"].end_byte]
+            class_name = captures["class_name"].text.decode("utf-8")
             if "parent_class" in captures:
-                parent_name = content[captures["parent_class"].start_byte:captures["parent_class"].end_byte]
+                parent_name = captures["parent_class"].text.decode("utf-8")
                 edges.append(GraphEdge(
                     source=file_id,
                     target=f"class::{parent_name}",
@@ -799,16 +802,7 @@ class GraphBuilder:
 
                 # Extract import statements
                 import_query = """
-                (import_statement
-                  (import_clause
-                    (named_imports
-                      (import_specifier
-                        name: (identifier) @imported_name
-                      )
-                    )
-                  )
-                  source: (string) @source
-                )
+                (import_statement source: (string) @source) @statement
                 """
 
                 # Extract require statements
@@ -865,16 +859,17 @@ class GraphBuilder:
     def _process_js_captures(self, captures: Dict[str, Any], query_type: str,
                            file_id: str, edges: List[GraphEdge], content: str) -> None:
         """Process tree-sitter captures for JavaScript/TypeScript."""
-        if query_type == "import" and "imported_name" in captures:
-            imported_name = content[captures["imported_name"].start_byte:captures["imported_name"].end_byte]
+        if query_type == "import" and "source" in captures:
+            source = captures["source"].text.decode("utf-8").strip('"\'')
             edges.append(GraphEdge(
                 source=file_id,
-                target=f"module::{imported_name}",
+                target=f"module::{source}",
                 type="imports",
-                metadata={"line": captures["imported_name"].start_point[0] + 1}
+                metadata={"line": captures["source"].start_point[0] + 1,
+                          "statement": captures["statement"].text.decode("utf-8")}
             ))
         elif query_type == "require" and "module" in captures:
-            module_name = content[captures["module"].start_byte:captures["module"].end_byte].strip('"\'')
+            module_name = captures["module"].text.decode("utf-8").strip('"\'')
             edges.append(GraphEdge(
                 source=file_id,
                 target=f"module::{module_name}",
@@ -882,7 +877,7 @@ class GraphBuilder:
                 metadata={"line": captures["module"].start_point[0] + 1}
             ))
         elif query_type == "call" and "function_name" in captures:
-            func_name = content[captures["function_name"].start_byte:captures["function_name"].end_byte]
+            func_name = captures["function_name"].text.decode("utf-8")
             edges.append(GraphEdge(
                 source=file_id,
                 target=f"function::{func_name}",
@@ -891,7 +886,7 @@ class GraphBuilder:
             ))
         elif query_type == "class" and "class_name" in captures:
             if "parent_class" in captures:
-                parent_name = content[captures["parent_class"].start_byte:captures["parent_class"].end_byte]
+                parent_name = captures["parent_class"].text.decode("utf-8")
                 edges.append(GraphEdge(
                     source=file_id,
                     target=f"class::{parent_name}",
@@ -1271,6 +1266,7 @@ class GraphQuery:
             self.logger.warning(f"File {file_path} not found in graph")
             return []
 
+        file_nodes = {node.file for node in self.graph.nodes.values() if node.type == "file"}
         # Find all import relationships
         for edge in self.graph.edges:
             if edge.source == file_node_id and edge.type in ["imports", "includes"]:
@@ -1291,12 +1287,11 @@ class GraphQuery:
                                           ([module] if module else []))
                     symbol = edge.metadata.get("symbol")
                     modules = [module + "." + symbol, module] if symbol and symbol != "*" else [module]
-                    file_nodes = {node.file for node in self.graph.nodes.values() if node.type == "file"}
                     for candidate in modules:
                         path = candidate.replace(".", "/")
-                        matches = {name for name in file_nodes if name in
-                                   {path + ".py", path + "/__init__.py",
-                                    "src/" + path + ".py", "src/" + path + "/__init__.py"}}
+                        matches = file_nodes.intersection(
+                            {path + ".py", path + "/__init__.py",
+                             "src/" + path + ".py", "src/" + path + "/__init__.py"})
                         if matches:
                             if len(matches) == 1:
                                 dependencies.update(matches)

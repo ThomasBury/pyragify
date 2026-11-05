@@ -40,8 +40,8 @@ def process_repo(
     verbose: bool = typer.Option(None, help="Override: Enable verbose output."),
     enable_graph: bool = typer.Option(None, help="Override: Enable knowledge graph building."),
     graph_output_dir: str = typer.Option(None, help="Override: Directory to save graph files."),
-    graph_format: str = typer.Option(None, help="Override: Graph serialization format (json, graphml)."),
-    include_relationships: list[str] = typer.Option(None, help="Override: Types of relationships to extract.")
+    graph_format: str = typer.Option(None, help="Override: Graph serialization format (only json is supported)."),
+    include_relationships: list[str] = typer.Option(None, help="Unsupported: relationship filtering is not implemented.")
 ):
     """
     Process a repository and output its content to text files with a specified word limit.

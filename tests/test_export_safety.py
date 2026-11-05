@@ -218,3 +218,12 @@ def test_graph_can_share_text_output_directory(tmp_path):
     RepoContentProcessor(repo, output, enable_graph=True,
                          graph_config={"output_dir": "."}).process_repo()
     assert "file::app.py" in json.loads((output / "repository_graph.json").read_text())["nodes"]
+
+
+@pytest.mark.parametrize("settings", [{"format": "graphml"}, {"compression": True},
+                                     {"relationships": ["imports"]}])
+def test_inactive_graph_settings_are_rejected(tmp_path, settings):
+    repo, output = source(tmp_path)
+    with pytest.raises(ValueError, match="unsupported settings"):
+        RepoContentProcessor(repo, output, enable_graph=True, graph_config=settings)
+    assert not output.exists()

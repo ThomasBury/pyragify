@@ -142,7 +142,7 @@ DEFAULT_SKIP_PATTERNS = [
     "*.svg",
 ]
 
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 CACHE_FILENAME = ".pyragify-cache.json"
 MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
 
@@ -198,7 +198,7 @@ def read_file_in_chunks(file_path: Path, chunk_size: int = 4096):
         while chunk := file.read(chunk_size):
             yield chunk
 
-def _process_file_worker(task_args: tuple[str, str, str, bool, Optional[Dict[str, Any]]]) -> tuple[str, str, dict, list, Optional[Dict[str, Any]]] | None:
+def _process_file_worker(task_args: tuple[str, str, str, bool, Optional[Dict[str, Any]]]) -> Optional[Tuple[str, str, dict, list, Optional[Dict[str, Any]]]]:
     """
     Worker function to process a single file in a separate process.
 
@@ -628,7 +628,7 @@ class FileProcessor:
                 if not main_node:
                     continue
 
-                code = source[main_node.start_byte:main_node.end_byte]
+                code = main_node.text.decode("utf-8")
                 chunks.append({
                     "type": chunk_type, "name": name, "code": code,
                     "start_line": main_node.start_point[0] + 1, "end_line": main_node.end_point[0] + 1
@@ -808,6 +808,10 @@ class RepoContentProcessor:
         self.repo_path = repo_path.resolve()
         self.output_dir = self._validate_output_path(output_dir)
         self.graph_config = graph_config or {}
+        unsupported = set(self.graph_config) - {"enabled", "output_dir", "format"}
+        if enable_graph and (unsupported or self.graph_config.get("format", "json") != "json"):
+            raise ValueError("Only JSON graph output is supported; unsupported settings: "
+                             f"{sorted(unsupported) or ['format']}")
         self.graph_output_dir = self._validate_output_path(
             self.output_dir / self.graph_config.get("output_dir", "graphs")
         ) if enable_graph else None
@@ -882,7 +886,7 @@ class RepoContentProcessor:
             return False
         if not isinstance(record.get("chunks"), list):
             return False
-        if self.enable_graph and record["chunks"]:
+        if self.enable_graph:
             try:
                 KnowledgeGraph.from_dict(record.get("graph"))
             except (TypeError, ValueError, AttributeError):

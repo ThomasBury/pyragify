@@ -95,3 +95,62 @@ def test_package_imports_resolve_to_exact_files(tmp_path, statement, dependency)
     refs = {edge.target for edge in builder.graph.edges if edge.source == "file::pkg/app.py"
             and edge.type == "cross_file_reference"}
     assert refs == ({"file::" + dependency} if dependency else set())
+
+
+def test_enabling_graphs_rebuilds_empty_chunk_cache(tmp_path):
+    from pyragify.processor import RepoContentProcessor
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "imports.py").write_text("import os\n")
+    (repo / "empty.py").write_text("")
+    output = tmp_path / "output"
+    RepoContentProcessor(repo, output).process_repo()
+    processor = RepoContentProcessor(repo, output, enable_graph=True)
+    processor.process_repo()
+    assert "file::imports.py" in processor.repo_graph.nodes
+    assert "file::empty.py" in processor.repo_graph.nodes
+    assert any(edge.target == "module::os" for edge in processor.repo_graph.edges)
+
+
+@pytest.mark.parametrize("filename, source, target", [
+    ("a.js", "// café 🐍\nfunction foo() {}\nfunction bar() { foo(); }", "a.js::foo"),
+    ("a.ts", "// café 🐍\nfunction foo() {}\nfunction bar() { foo(); }", "a.ts::foo"),
+    ("a.c", "// café 🐍\nint foo() { return 1; }\nint bar() { return foo(); }", "a.c::foo"),
+    ("a.cpp", "// café 🐍\nint foo() { return 1; }\nint bar() { return foo(); }", "a.cpp::foo"),
+    ("A.java", "// café 🐍\nclass A {\nint foo() { return 1; }\nint bar() { return foo(); }\n}", "A.java::A.foo"),
+])
+def test_unicode_preserves_parser_code_and_references(tmp_path, filename, source, target):
+    graph = build(tmp_path, filename, source)
+    assert any(edge.type == "calls" and edge.target == target for edge in graph.edges)
+    file = tmp_path / filename
+    chunks, _ = FileProcessor(tmp_path, tmp_path / "output").chunk_file(file)
+    assert any("foo()" in chunk.get("code", "") for chunk in chunks)
+    assert all(chunk["code"] in source for chunk in chunks if "code" in chunk)
+
+
+@pytest.mark.parametrize("extension", ["js", "ts"])
+def test_javascript_import_sources_are_distinct(tmp_path, extension):
+    graph = build(tmp_path, "app." + extension, """
+import { foo as first } from './a';
+import { foo as second } from './b';
+import value from './default';
+import * as ns from './namespace';
+import './side-effect';
+first();
+""")
+    imports = [edge for edge in graph.edges if edge.type == "imports"]
+    assert {edge.target for edge in imports} == {"module::" + name for name in
+        ["./a", "./b", "./default", "./namespace", "./side-effect"]}
+    assert any("foo as first" in edge.metadata["statement"] for edge in imports)
+
+
+def test_system_include_survives_other_edges(tmp_path):
+    graph = build(tmp_path, "app.c", "#include <stdio.h>\nint run() { return puts(\"hi\"); }\n")
+    assert any(edge.type == "includes" and edge.target == "header::stdio.h" for edge in graph.edges)
+
+
+def test_many_unnamed_chunks_have_unique_ids(tmp_path):
+    path = tmp_path / "app.css"
+    path.write_text("a {} b {} c {} d {}")
+    graph = GraphBuilder(tmp_path).build_from_chunks(path, [{"type": "css_rule", "content": "{}"}] * 5, "css")
+    assert len([node for node in graph.nodes.values() if node.type == "css_rule"]) == 5
