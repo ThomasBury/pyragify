@@ -51,7 +51,65 @@ uv sync --locked --group dev --group docs
 pip install -e .
 ```
 
-## Verification
+## Agent skills
+
+Pyragify 0.5.0 bundles two self-contained skills:
+`pyragify-export` covers source-only exports and manifest inspection;
+`pyragify-graph` covers experimental graph export and queries with source checks.
+Versions before 0.5.0 do not contain them. Once 0.5.0 or later is available on
+your package index, install from a consuming project using Python 3.12:
+
+```bash
+uv add --dev pyragify
+uvx library-skills install --skill pyragify-export --skill pyragify-graph
+uvx library-skills scan --json
+```
+
+PyPI publication is separate from the GitHub release. Until the package is on
+your index, download the wheel from the
+[0.5.0 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
+and use `uv add --dev /path/to/pyragify-0.5.0-py3-none-any.whl` instead.
+
+[Library Skills](https://library-skills.io/create/) discovers skills inside
+installed library packages. It scans the project's environment, so a global
+installation or an isolated `uvx pyragify` CLI alone does not support this workflow.
+Run discovery and installation from the project root with its environment synced.
+
+The default targets are `.agents/skills/pyragify-export` and
+`.agents/skills/pyragify-graph`. The [official CLI options](https://library-skills.io/reference/)
+include `--claude` to install additional targets under `.claude/skills` and `--copy`
+to create ordinary directories where symlinks are unavailable:
+
+```bash
+uvx library-skills install --skill pyragify-export --skill pyragify-graph --claude
+# Alternative for environments without symlinks:
+uvx library-skills install --skill pyragify-export --skill pyragify-graph --copy
+```
+
+Symlinked skills follow the installed package version. Copied skills require
+refreshing after upgrades: remove the old copied skill directories and reinstall
+with `--copy`, preserving any local edits separately.
+
+To use a source checkout containing these skills:
+
+```bash
+git clone https://github.com/ThomasBury/pyragify.git
+cd pyragify
+uv sync --locked
+uvx library-skills scan --json
+uvx library-skills install --skill pyragify-export --skill pyragify-graph
+```
+
+The local packaging check uses Library Skills `0.0.19` against isolated wheel,
+editable, and source-distribution installations:
+
+```bash
+uv run --locked python scripts/check_skill_packaging.py
+```
+
+Installation from PyPI remains unverified until PyPI publication.
+
+## CLI verification
 
 After installation, verify that Pyragify is working:
 

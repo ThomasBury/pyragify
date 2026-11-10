@@ -4,6 +4,32 @@ Export a local repository as readable Markdown with a JSON manifest that records
 where the source came from and what was excluded. Each selected UTF-8 file is
 retained once, including imports, decorators, comments, whitespace, and Unicode.
 
+## Agent skills in a consuming project
+
+Pyragify 0.5.0 bundles `pyragify-export` for source handoffs and
+`pyragify-graph` for experimental graph exploration. Versions before 0.5.0
+do not include these skills. Once 0.5.0 or later is available on your package
+index, run this in a consuming project using Python 3.12:
+
+```bash
+uv add --dev pyragify
+uvx library-skills install --skill pyragify-export --skill pyragify-graph
+```
+
+Until then, install the wheel attached to the
+[0.5.0 GitHub release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
+with `uv add --dev /path/to/pyragify-0.5.0-py3-none-any.whl`, then run the same
+Library Skills command.
+
+[Library Skills](https://library-skills.io/reference/) scans the project's
+environment; a global or isolated Pyragify CLI installation alone is insufficient.
+Skills install into `.agents/skills` by default. Add `--claude` to also install
+into `.claude/skills`, or `--copy` where symlinks are unavailable. Symlinked skills
+follow the installed package version; refresh copied skills after upgrades.
+Use `uvx library-skills scan --json` to inspect discovery. See the
+[installation guide](docs/getting-started/installation.md#agent-skills) for the
+source-checkout route available before publication.
+
 ## Use from a source checkout
 
 ```bash
@@ -49,6 +75,7 @@ LLM answer-quality improvement, or large-repository performance is claimed.
 
 ```bash
 uv run --locked pytest
+uv run --locked python scripts/check_skill_packaging.py
 uv run --locked --group docs mkdocs build
 ```
 
