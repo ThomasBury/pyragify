@@ -1,6 +1,6 @@
 [project]
 name = "pyragify"
-version = "0.2.0"
+version = "0.3.0"
 description = "Export repository source as Markdown with a provenance manifest and optional experimental code graphs."
 readme = "README.md"
 requires-python = ">=3.9, <3.13"

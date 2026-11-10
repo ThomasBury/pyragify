@@ -21,6 +21,7 @@ from urllib.parse import quote
 from pyragify.utils import validate_directory
 from pyragify.graph import (
     GraphBuilder,
+    _JavaScriptAnalysis,
     KnowledgeGraph,
     TREE_SITTER_AVAILABLE,
     get_tree_sitter_language_and_parser,
@@ -144,7 +145,7 @@ DEFAULT_SKIP_PATTERNS = [
     "*.svg",
 ]
 
-CACHE_VERSION = 5
+CACHE_VERSION = 8
 CACHE_FILENAME = ".pyragify-cache.json"
 MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
 
@@ -418,6 +419,7 @@ class FileProcessor:
                         "code": code_snippet,
                         "start_line": node.lineno,
                         "end_line": node.end_lineno,
+                        "metadata": {"column": node.col_offset, "end_column": node.end_col_offset},
                     })
                 elif isinstance(node, ast.ClassDef):
                     if not hasattr(node, 'end_lineno'): continue # Skip nodes without end line info
@@ -438,6 +440,7 @@ class FileProcessor:
                         "code": code_snippet,
                         "start_line": node.lineno,
                         "end_line": node.end_lineno,
+                        "metadata": {"column": node.col_offset, "end_column": node.end_col_offset},
                     })
 
             # Extract inline comments using tokenize
@@ -672,7 +675,7 @@ class FileProcessor:
         Supports semantic extraction for JavaScript/TypeScript (functions, classes, arrow functions), Java (methods, classes), C/C++ (functions, structs), HTML (scripts, styles), and CSS (rules). Falls back to full content if parsing fails.
         """
         try:
-            source = file_path.read_text(encoding="utf-8")
+            source = file_path.read_bytes().decode("utf-8")
             line_count = source.count('\n') + 1
             lang_name = FILE_TYPE_MAP[suffix]
 
@@ -688,13 +691,7 @@ class FileProcessor:
                         self.parser_limitations.append(f"Tree-sitter {lang_name} syntax errors; graph extraction may be incomplete.")
 
                     if lang_name in ["javascript", "typescript"]:
-                        chunks.extend(self._query_tree_sitter(language, root_node, source,
-                            "(function_declaration name: (identifier) @name) @function_declaration", "javascript_function"))
-                        class_name_type = "type_identifier" if lang_name == "typescript" else "identifier"
-                        chunks.extend(self._query_tree_sitter(language, root_node, source,
-                            f"(class_declaration name: ({class_name_type}) @name) @class_declaration", "javascript_class"))
-                        chunks.extend(self._query_tree_sitter(language, root_node, source,
-                            "(arrow_function) @arrow_function", "javascript_arrow_function"))
+                        chunks.extend(_JavaScriptAnalysis(root_node).chunks)
 
                     elif lang_name == "java":
                         chunks.extend(self._query_tree_sitter(language, root_node, source,

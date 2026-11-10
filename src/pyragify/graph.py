@@ -10,10 +10,9 @@ import json
 import logging
 import re
 import warnings
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from queue import Queue
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Tree-sitter imports (conditionally imported)
@@ -127,7 +126,12 @@ class KnowledgeGraph:
     @staticmethod
     def _edge_signature(edge: GraphEdge) -> str:
         """Create a stable signature for duplicate-edge detection."""
-        return f"{edge.source}->{edge.target}:{edge.type}"
+        signature = f"{edge.source}->{edge.target}:{edge.type}"
+        if (edge.type == "calls" and edge.target.startswith(("function::", "method::"))
+                and edge.metadata.get("import")):
+            # Shared placeholders can represent different lexical import bindings.
+            signature += ":" + json.dumps(edge.metadata["import"], sort_keys=True)
+        return signature
 
     def add_node(self, node: GraphNode) -> None:
         """Add a node to the graph."""
@@ -231,6 +235,365 @@ class KnowledgeGraph:
         self.metadata["languages"].update(other.metadata.get("languages", set()))
 
 
+class _PythonScope:
+    """Bindings collected before resolving any calls in a lexical scope."""
+
+    def __init__(self, node, parent=None):
+        self.node = node
+        self.parent = parent
+        self.owner = parent.owner if parent else None
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            self.owner = node
+        self.bindings = defaultdict(list)
+        self.globals = set()
+        self.nonlocals = set()
+        self.wildcard_import = False
+
+    def lookup(self, name):
+        scope = self
+        while scope:
+            if scope.parent and (name in scope.globals or name in scope.nonlocals):
+                # A write through a declaration has an uncertain callable value.
+                if name in scope.bindings:
+                    return None
+                if name in scope.globals:
+                    while scope.parent:
+                        scope = scope.parent
+                    continue
+                scope = scope.parent
+                while scope and isinstance(scope.node, ast.ClassDef):
+                    scope = scope.parent
+                continue
+            if scope.wildcard_import:
+                return None
+            if name in scope.bindings:
+                bindings = scope.bindings[name]
+                return bindings[0] if len(bindings) == 1 else None
+            scope = scope.parent
+            while scope and isinstance(scope.node, ast.ClassDef):
+                scope = scope.parent
+        return None
+
+
+class _PythonCallVisitor(ast.NodeVisitor):
+    """Collect execution owners and lexical bindings, then resolve local calls."""
+
+    def __init__(self, tree):
+        self.scope = _PythonScope(tree)
+        self.scopes = {tree: self.scope}
+        self.calls = []
+        self.visit(tree)
+
+    def _body(self, node, body, arguments=None):
+        parent = self.scope
+        self.scope = self.scopes[node] = _PythonScope(node, parent)
+        if arguments:
+            parameters = arguments.posonlyargs + arguments.args + arguments.kwonlyargs
+            parameters += [arg for arg in (arguments.vararg, arguments.kwarg) if arg]
+            for arg in parameters:
+                self.scope.bindings[arg.arg].append(arg)
+                self.scopes[arg] = self.scope
+        for child in body:
+            self.visit(child)
+        self.scope = parent
+
+    def _defaults(self, node):
+        for expression in node.args.defaults + node.args.kw_defaults:
+            if expression is not None:
+                self.visit(expression)
+
+    def visit_FunctionDef(self, node):
+        self.scope.bindings[node.name].append(node)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self._defaults(node)
+        for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs + [node.args.vararg, node.args.kwarg]:
+            if arg and arg.annotation:
+                self.visit(arg.annotation)
+        if node.returns:
+            self.visit(node.returns)
+        self._body(node, node.body, node.args)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node):
+        self.scope.bindings[node.name].append(node)
+        for expression in node.decorator_list + node.bases + [keyword.value for keyword in node.keywords]:
+            self.visit(expression)
+        self._body(node, node.body)
+
+    def visit_Lambda(self, node):
+        self._defaults(node)
+        self._body(node, [node.body], node.args)
+
+    def visit_ListComp(self, node):
+        # The first iterable executes outside the comprehension's implicit scope.
+        self.visit(node.generators[0].iter)
+        parent = self.scope
+        self.scope = self.scopes[node] = _PythonScope(node, parent)
+        for index, generator in enumerate(node.generators):
+            if index:
+                self.visit(generator.iter)
+            self.visit(generator.target)
+            for condition in generator.ifs:
+                self.visit(condition)
+        if isinstance(node, ast.DictComp):
+            self.visit(node.key)
+            self.visit(node.value)
+        else:
+            self.visit(node.elt)
+        self.scope = parent
+
+    visit_SetComp = visit_ListComp
+    visit_DictComp = visit_ListComp
+    visit_GeneratorExp = visit_ListComp
+
+    def visit_NamedExpr(self, node):
+        scope = self.scope
+        while isinstance(scope.node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+            scope = scope.parent
+        scope.bindings[node.target.id].append(node.target)
+        self.visit(node.value)
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.scope.bindings[node.id].append(node)
+
+    def visit_Import(self, node):
+        self.scopes[node] = self.scope
+        for alias in node.names:
+            self.scope.bindings[alias.asname or alias.name.split(".")[0]].append(node)
+
+    def visit_ImportFrom(self, node):
+        self.scopes[node] = self.scope
+        for alias in node.names:
+            if alias.name == "*":
+                self.scope.wildcard_import = True
+            else:
+                self.scope.bindings[alias.asname or alias.name].append(node)
+
+    def visit_ExceptHandler(self, node):
+        if node.name:
+            self.scope.bindings[node.name].append(node)
+        self.generic_visit(node)
+
+    def visit_MatchAs(self, node):
+        if node.name:
+            self.scope.bindings[node.name].append(node)
+        self.generic_visit(node)
+
+    visit_MatchStar = visit_MatchAs
+
+    def visit_MatchMapping(self, node):
+        if node.rest:
+            self.scope.bindings[node.rest].append(node)
+        self.generic_visit(node)
+
+    def visit_Global(self, node):
+        self.scope.globals.update(node.names)
+
+    def visit_Nonlocal(self, node):
+        self.scope.nonlocals.update(node.names)
+
+    def visit_Call(self, node):
+        self.calls.append((node, self.scope))
+        self.generic_visit(node)
+
+    def definition(self, call, scope):
+        if isinstance(call.func, ast.Name):
+            binding = scope.lookup(call.func.id)
+        elif isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
+            receiver = call.func.value.id
+            binding = scope.lookup(receiver)
+            if isinstance(binding, ast.arg) and receiver in ("self", "cls"):
+                method = self.scopes[binding]
+                positional = method.node.args.posonlyargs + method.node.args.args
+                binding = method.parent.node if positional and binding is positional[0] else None
+            if not isinstance(binding, ast.ClassDef):
+                return None
+            members = self.scopes[binding].bindings.get(call.func.attr, [])
+            binding = members[0] if len(members) == 1 else None
+        else:
+            return None
+        return binding if isinstance(binding, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else None
+
+    def imported_call(self, parts, scope):
+        binding = scope.lookup(parts[0])
+        if not isinstance(binding, (ast.Import, ast.ImportFrom)):
+            return None
+        for alias in binding.names:
+            name = alias.asname or (
+                alias.name.split(".")[0] if isinstance(binding, ast.Import) else alias.name)
+            if name != parts[0]:
+                continue
+            attributes = parts[1:]
+            if isinstance(binding, ast.Import):
+                prefix = alias.name.split(".")[1:] if not alias.asname else []
+                if attributes[:len(prefix)] != prefix:
+                    return None
+                module, level, symbol = alias.name, 0, None
+                attributes = attributes[len(prefix):]
+            else:
+                module, level, symbol = binding.module or "", binding.level, alias.name
+            owner = self.scopes[binding].node
+            return {
+                "module": module, "level": level, "symbol": symbol,
+                "attributes": attributes, "line": binding.lineno, "column": binding.col_offset,
+                "scope": [owner.lineno, owner.col_offset] if not isinstance(owner, ast.Module) else None,
+            }
+        return None
+
+
+def _python_module_files(file_nodes, file_path, module, level=0):
+    """Match exact root/src module paths without selecting an ambiguous match."""
+    if level:
+        package = list(Path(file_path).parent.parts)
+        if package[:1] == ["src"]:
+            package = package[1:]
+        if level > len(package):
+            return set()
+        module = ".".join(package[:len(package) - level + 1] + ([module] if module else []))
+    path = module.replace(".", "/")
+    return file_nodes.intersection({path + ".py", path + "/__init__.py",
+                                    "src/" + path + ".py", "src/" + path + "/__init__.py"})
+
+
+class _JavaScriptScope:
+    """Lexical bindings; repeated declarations and writes have unknown values."""
+
+    def __init__(self, parent=None, function=False):
+        self.parent = parent
+        self.function = function
+        self.bindings = defaultdict(list)
+
+    def binding_scope(self, name):
+        scope = self
+        while scope and name not in scope.bindings:
+            scope = scope.parent
+        return scope
+
+    def lookup(self, name):
+        scope = self.binding_scope(name)
+        values = scope.bindings[name] if scope else []
+        return values[0] if len(values) == 1 else None
+
+
+class _JavaScriptAnalysis:
+    """Use the same parser positions for symbols, execution owners, and bindings."""
+
+    function_types = {"function_declaration", "generator_function_declaration",
+                      "arrow_function", "function", "function_expression",
+                      "generator_function", "method_definition"}
+    class_types = {"class_declaration", "abstract_class_declaration", "class"}
+
+    def __init__(self, root):
+        self.chunks = []
+        self.calls = []
+        self.writes = []
+        self._visit(root, _JavaScriptScope(function=True), None)
+        for scope, name in self.writes:
+            binding_scope = scope.binding_scope(name)
+            if binding_scope:
+                binding_scope.bindings[name].append(None)
+
+    def _bind(self, node, scope, definition=None):
+        if node is None:
+            return
+        if node.type in {"identifier", "type_identifier", "shorthand_property_identifier_pattern"}:
+            scope.bindings[node.text.decode("utf-8")].append(definition)
+        elif node.type in {"pair_pattern", "assignment_pattern", "object_assignment_pattern"}:
+            self._bind(node.child_by_field_name("value" if node.type == "pair_pattern" else "left"), scope)
+        elif node.type in {"required_parameter", "optional_parameter"}:
+            self._bind(node.child_by_field_name("pattern"), scope)
+        elif node.type in {"formal_parameters", "rest_pattern", "array_pattern", "object_pattern"}:
+            for child in node.named_children:
+                self._bind(child, scope)
+
+    def _visit(self, node, scope, owner):
+        is_function = node.type in self.function_types
+        is_class = node.type in self.class_types
+        name = node.child_by_field_name("name") if is_function or is_class else None
+        if node.type in {"function_declaration", "generator_function_declaration",
+                         "class_declaration", "abstract_class_declaration"}:
+            self._bind(name, scope, node.start_byte if is_function else None)
+
+        if is_function or is_class:
+            if node.type == "arrow_function":
+                parent = node.parent
+                if parent.type == "variable_declarator" and parent.child_by_field_name("value") == node:
+                    candidate = parent.child_by_field_name("name")
+                    name = candidate if candidate.type == "identifier" else None
+            symbol_name = name.text.decode("utf-8") if name else f"anonymous@{node.start_point[0] + 1}:{node.start_point[1]}"
+            self.chunks.append({
+                "type": "javascript_class" if is_class else (
+                    "javascript_arrow_function" if node.type == "arrow_function" else "javascript_function"),
+                "name": symbol_name, "code": node.text.decode("utf-8"),
+                "start_line": node.start_point[0] + 1, "end_line": node.end_point[0] + 1,
+                "metadata": {"start_byte": node.start_byte, "end_byte": node.end_byte,
+                             "column": node.start_point[1], "parent_start_byte": owner},
+            })
+            owner = node.start_byte
+            scope = _JavaScriptScope(scope, function=is_function)
+            if node.type in {"function", "function_expression", "generator_function", "class"}:
+                self._bind(name, scope, node.start_byte if is_function else None)
+            if is_function:
+                self._bind(node.child_by_field_name("parameters") or node.child_by_field_name("parameter"), scope)
+        elif node.type in {"statement_block", "for_statement", "for_in_statement", "catch_clause", "switch_body"}:
+            scope = _JavaScriptScope(scope)
+
+        if node.type == "variable_declarator":
+            binding_scope = scope
+            if node.parent.type == "variable_declaration":  # var belongs to the function, not its block.
+                while not binding_scope.function:
+                    binding_scope = binding_scope.parent
+            value = node.child_by_field_name("value")
+            self._bind(node.child_by_field_name("name"), binding_scope,
+                       value.start_byte if value and value.type == "arrow_function" else None)
+        elif node.type in {"internal_module", "module"}:
+            self._bind(node.child_by_field_name("name"), scope)
+            scope = _JavaScriptScope(scope, function=True)
+        elif node.type == "enum_declaration":
+            self._bind(node.child_by_field_name("name"), scope)
+        elif node.type == "function_signature":
+            self._bind(node.child_by_field_name("name"), scope)
+            return
+        elif node.type == "catch_clause":
+            self._bind(node.child_by_field_name("parameter"), scope)
+        elif node.type == "for_in_statement":
+            left = node.child_by_field_name("left")
+            kind = node.child_by_field_name("kind")
+            if kind:
+                binding_scope = scope
+                if kind.type == "var":
+                    while not binding_scope.function:
+                        binding_scope = binding_scope.parent
+                self._bind(left, binding_scope)
+            else:
+                self._write(left, scope)
+        elif node.type in {"assignment_expression", "augmented_assignment_expression", "update_expression"}:
+            self._write(node.child_by_field_name("left") or node.child_by_field_name("argument"), scope)
+        elif node.type == "import_specifier":
+            self._bind(node.child_by_field_name("alias") or node.child_by_field_name("name"), scope)
+            return
+        elif node.type in {"import_clause", "namespace_import", "import_require_clause"}:
+            for child in node.named_children:
+                if child.type == "identifier":
+                    self._bind(child, scope)
+        elif node.type == "call_expression":
+            function = node.child_by_field_name("function")
+            if function and function.type == "identifier":
+                self.calls.append((function, scope, owner))
+
+        for child in node.named_children:
+            self._visit(child, scope, owner)
+
+    def _write(self, node, scope):
+        # Reuse pattern binding rules without treating a write as a new declaration.
+        bindings = _JavaScriptScope()
+        self._bind(node, bindings)
+        self.writes.extend((scope, name) for name in bindings.bindings)
+
+
 class GraphBuilder:
     """
     Builder class for constructing knowledge graphs from code analysis.
@@ -280,7 +643,8 @@ class GraphBuilder:
         self.file_nodes[relative_path] = file_node
 
         # Process chunks and extract entities
-        for chunk in sorted(chunks, key=lambda item: item.get("start_line") or 0):
+        for chunk in sorted(chunks, key=lambda item: (item.get("start_line") or 0,
+                                                    item.get("metadata", {}).get("start_byte", 0))):
             self._process_chunk(chunk, relative_path, language, file_graph)
 
         return file_graph
@@ -394,13 +758,31 @@ class GraphBuilder:
     ) -> None:
         """Normalize dependency endpoints, materialize missing nodes, and add edges."""
         file_node_id = self._file_node_id(file_path)
+        python_definitions = {
+            (node.line_start, node.metadata.get("column")): node.id
+            for node in graph.nodes.values()
+            if node.language == "python" and node.type in {"function", "class"}
+        }
+        javascript_definitions = {
+            node.metadata["start_byte"]: node.id for node in graph.nodes.values()
+            if node.language in {"javascript", "typescript"} and "start_byte" in node.metadata
+        }
         for edge in dependencies:
             line = edge.metadata.get("line")
-            source = self._normalize_reference_id(graph, file_path, edge.source, line)
-            target = self._normalize_reference_id(graph, file_path, edge.target, line)
-            if edge.type == "calls":
-                source = self._find_enclosing_node_id(graph, file_path, line) or file_node_id
-            elif edge.type == "inherits":
+            if language == "python" and edge.type == "calls":
+                owner = edge.metadata["owner"]
+                definition = edge.metadata["definition"]
+                source = python_definitions.get(tuple(owner), file_node_id) if owner else file_node_id
+                target = python_definitions.get(tuple(definition), edge.target) if definition else edge.target
+            elif language in {"javascript", "typescript"} and edge.type == "calls":
+                source = javascript_definitions.get(edge.metadata.get("owner"), file_node_id)
+                target = javascript_definitions.get(edge.metadata.get("definition"), edge.target)
+            else:
+                source = self._normalize_reference_id(graph, file_path, edge.source, line)
+                target = self._normalize_reference_id(graph, file_path, edge.target, line)
+                if edge.type == "calls":
+                    source = self._find_enclosing_node_id(graph, file_path, line) or file_node_id
+            if edge.type == "inherits":
                 subclass = self._find_enclosing_node_id(
                     graph, file_path, line, {"class", "java_class", "javascript_class", "cpp_class"})
                 if subclass:
@@ -430,6 +812,10 @@ class GraphBuilder:
                       and (is_function_like_node(node) or node.type in
                            {"class", "javascript_class", "java_class", "cpp_class", "cpp_struct"})]
         parent = min(containers, key=lambda node: node.line_end - node.line_start) if containers else None
+        if language in {"javascript", "typescript"} and "parent_start_byte" in chunk.get("metadata", {}):
+            parent_position = chunk["metadata"]["parent_start_byte"]
+            parent = next((node for node in graph.nodes.values()
+                           if node.metadata.get("start_byte") == parent_position), None) if parent_position is not None else None
         qualified = f"{parent.metadata['qualified_name']}.{name}" if parent else name
         metadata = dict(chunk.get("metadata", {}), qualified_name=qualified)
 
@@ -739,42 +1125,43 @@ class GraphBuilder:
                                       "symbol": alias.name}
                         ))
 
-            class PythonCallVisitor(ast.NodeVisitor):
-                def __init__(self) -> None:
-                    self.function_stack: List[str] = []
-
-                def _call_source(self) -> str:
-                    if self.function_stack:
-                        return f"function::{self.function_stack[-1]}"
-                    return file_id
-
-                def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-                    self.function_stack.append(node.name)
-                    self.generic_visit(node)
-                    self.function_stack.pop()
-
-                def visit_Call(self, node: ast.Call) -> None:
-                    if isinstance(node.func, ast.Name):
-                        func_name = node.func.id
-                        edges.append(GraphEdge(
-                            source=self._call_source(),
-                            target=f"function::{func_name}",
-                            type="calls",
-                            metadata={"line": node.lineno}
-                        ))
-                    elif isinstance(node.func, ast.Attribute):
-                        # Handle method calls like obj.method()
-                        if isinstance(node.func.value, ast.Name):
-                            method_name = node.func.attr
-                            edges.append(GraphEdge(
-                                source=self._call_source(),
-                                target=f"method::{node.func.value.id}.{method_name}",
-                                type="calls",
-                                metadata={"line": node.lineno}
-                            ))
-                    self.generic_visit(node)
-
-            PythonCallVisitor().visit(tree)
+            visitor = _PythonCallVisitor(tree)
+            file_node = self.file_nodes.get(self._relative_path(file_path))
+            if file_node:
+                bindings = visitor.scope.bindings
+                file_node.metadata["python_bindings"] = {
+                    name: [nodes[0].lineno, nodes[0].col_offset]
+                    if len(nodes) == 1 and isinstance(nodes[0], (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and not visitor.scope.wildcard_import else None
+                    for name, nodes in bindings.items()
+                }
+                if visitor.scope.wildcard_import:
+                    file_node.metadata["python_bindings"]["*"] = None
+            for call, scope in visitor.calls:
+                expression = call.func
+                parts = []
+                while isinstance(expression, ast.Attribute):
+                    parts.insert(0, expression.attr)
+                    expression = expression.value
+                if not isinstance(expression, ast.Name):
+                    continue
+                parts.insert(0, expression.id)
+                target = ("function::" if len(parts) == 1 else "method::") + ".".join(parts)
+                definition = visitor.definition(call, scope)
+                imported = visitor.imported_call(parts, scope)
+                edges.append(GraphEdge(
+                    source=file_id,
+                    target=target,
+                    type="calls",
+                    metadata={
+                        "line": call.lineno, "column": call.col_offset,
+                        "end_line": call.end_lineno, "end_column": call.end_col_offset,
+                        "owner": [scope.owner.lineno, scope.owner.col_offset] if scope.owner else None,
+                        "definition": [definition.lineno, definition.col_offset] if definition else None,
+                        "import": imported,
+                        "unresolved_target": target,
+                    },
+                ))
 
             # Extract class inheritance
             for node in ast.walk(tree):
@@ -823,12 +1210,14 @@ class GraphBuilder:
                 )
                 """
 
-                # Extract function calls
-                call_query = """
-                (call_expression
-                  function: (identifier) @function_name
-                )
-                """
+                analysis = _JavaScriptAnalysis(root_node)
+                for function, scope, owner in analysis.calls:
+                    name = function.text.decode("utf-8")
+                    edges.append(GraphEdge(
+                        source=file_id, target=f"function::{name}", type="calls",
+                        metadata={"line": function.start_point[0] + 1, "column": function.start_point[1],
+                                  "owner": owner, "definition": scope.lookup(name)},
+                    ))
 
                 # Extract class declarations and inheritance
                 class_query = """
@@ -845,7 +1234,6 @@ class GraphBuilder:
                 for query_str, query_type in [
                     (import_query, "import"),
                     (require_query, "require"),
-                    (call_query, "call"),
                     (class_query, "class")
                 ]:
                     try:
@@ -884,14 +1272,6 @@ class GraphBuilder:
                 target=f"module::{module_name}",
                 type="imports",
                 metadata={"line": captures["module"].start_point[0] + 1}
-            ))
-        elif query_type == "call" and "function_name" in captures:
-            func_name = captures["function_name"].text.decode("utf-8")
-            edges.append(GraphEdge(
-                source=file_id,
-                target=f"function::{func_name}",
-                type="calls",
-                metadata={"line": captures["function_name"].start_point[0] + 1}
             ))
         elif query_type == "class" and "class_name" in captures:
             if "parent_class" in captures:
@@ -985,14 +1365,69 @@ class GraphBuilder:
             List of all file graphs to analyze for cross-references
         """
         query = GraphQuery(self.graph)
+        self._resolve_python_calls()
+        file_nodes = {node.file for node in self.graph.nodes.values() if node.type == "file"}
+        imports = defaultdict(list)
+        for edge in self.graph.edges:
+            if edge.type in {"imports", "includes"}:
+                imports[edge.source].append(edge)
         for file_graph in all_file_graphs:
             for node in file_graph.nodes.values():
                 if node.type == "file":
-                    for dependency in query.find_dependencies(node.file):
+                    for dependency in query._dependencies_for_file(
+                            node.file, file_nodes, imports.get(f"file::{node.file}", ())):
                         if dependency != node.file:
                             self.graph.add_edge(GraphEdge(
                                 source=node.id, target=self._file_node_id(dependency),
                                 type="cross_file_reference", metadata={"reference_type": "imports"}))
+
+    def _resolve_python_calls(self) -> None:
+        """Retarget calls individually using their serialized lexical import evidence."""
+        files = {node.file for node in self.graph.nodes.values() if node.type == "file"}
+        definitions = {
+            (node.file, node.line_start, node.metadata.get("column")): node.id
+            for node in self.graph.nodes.values() if node.language == "python" and node.type == "function"
+        }
+        previous_targets = set()
+        edges = self.graph.edges
+        self.graph.edges = []
+        self.graph.sync_metadata()
+        for edge in edges:
+            imported = edge.metadata.get("import") if edge.type == "calls" else None
+            if imported:
+                source_file = self.graph.nodes[edge.source].file
+                module, symbol = imported["module"], imported["symbol"]
+                attributes = imported["attributes"]
+                if symbol and attributes:
+                    parents = _python_module_files(files, source_file, module, imported["level"])
+                    bindings = {}
+                    if len(parents) == 1:
+                        parent = self.graph.nodes["file::" + next(iter(parents))]
+                        bindings = parent.metadata.get("python_bindings", {})
+                    if len(parents) > 1 or symbol in bindings or "*" in bindings:
+                        matches = set()
+                    else:
+                        child_module = ".".join(filter(None, (module, symbol)))
+                        matches = _python_module_files(files, source_file, child_module, imported["level"])
+                else:
+                    matches = _python_module_files(files, source_file, module, imported["level"])
+                    if symbol:
+                        attributes = [symbol]
+                target = edge.metadata["unresolved_target"]
+                if len(matches) == 1 and len(attributes) == 1:
+                    path = next(iter(matches))
+                    position = self.graph.nodes["file::" + path].metadata.get("python_bindings", {}).get(attributes[0])
+                    if position:
+                        target = definitions.get((path, *position), target)
+                previous_targets.update((edge.target, edge.metadata["unresolved_target"]))
+                edge = GraphEdge(edge.source, target, edge.type, edge.metadata.copy())
+                self._ensure_reference_node(self.graph, target, "python")
+            self.graph.add_edge(edge)
+        connected = {endpoint for edge in self.graph.edges for endpoint in (edge.source, edge.target)}
+        for target in previous_targets - connected:
+            if self.graph.nodes.get(target) and self.graph.nodes[target].metadata.get("external"):
+                del self.graph.nodes[target]
+        self.graph.sync_metadata()
 
     def validate_graph(self) -> Dict[str, Any]:
         """
@@ -1023,7 +1458,7 @@ class GraphBuilder:
         # Check for duplicate edges
         edge_signatures = set()
         for edge in self.graph.edges:
-            signature = f"{edge.source}->{edge.target}:{edge.type}"
+            signature = self.graph._edge_signature(edge)
             if signature in edge_signatures:
                 validation_results["warnings"].append(f"Duplicate edge: {signature}")
             else:
@@ -1088,7 +1523,7 @@ class GraphBuilder:
         deduplicated_edges = []
 
         for edge in self.graph.edges:
-            signature = f"{edge.source}->{edge.target}:{edge.type}"
+            signature = self.graph._edge_signature(edge)
             if signature not in seen_signatures:
                 seen_signatures.add(signature)
                 deduplicated_edges.append(edge)
@@ -1152,15 +1587,25 @@ class GraphQuery:
             self.logger.warning(f"Entity {entity_id} not found in graph")
             return []
 
+        if depth <= 0:
+            return []
+
+        adjacency = defaultdict(list)
+        for edge in self.graph.edges:
+            if relationship_types is not None and edge.type not in relationship_types:
+                continue
+            adjacency[edge.source].append(edge)
+            if edge.target != edge.source:
+                adjacency[edge.target].append(edge)
+
         visited = set()
         context_chunks = []
 
         # BFS traversal
-        queue = Queue()
-        queue.put((entity_id, 0, []))  # (node_id, current_depth, path)
+        queue = deque([(entity_id, 0, [])])  # (node_id, current_depth, path)
 
-        while not queue.empty():
-            current_id, current_depth, path = queue.get()
+        while queue:
+            current_id, current_depth, path = queue.popleft()
 
             if current_id in visited or current_depth > depth:
                 continue
@@ -1184,17 +1629,10 @@ class GraphQuery:
 
             # Add neighbors to queue
             if current_depth < depth:
-                for edge in self.graph.edges:
-                    if relationship_types is not None and edge.type not in relationship_types:
-                        continue
-                    if edge.source == current_id:
-                        neighbor_id = edge.target
-                    elif edge.target == current_id:
-                        neighbor_id = edge.source
-                    else:
-                        continue
+                for edge in adjacency.get(current_id, ()):
+                    neighbor_id = edge.target if edge.source == current_id else edge.source
                     if neighbor_id not in visited:
-                        queue.put((neighbor_id, current_depth + 1, path + [edge.type]))
+                        queue.append((neighbor_id, current_depth + 1, path + [edge.type]))
 
         # Sort by relevance score
         context_chunks.sort(key=lambda x: x.relevance_score, reverse=True)
@@ -1274,43 +1712,44 @@ class GraphQuery:
         List[str]
             List of dependency file paths
         """
-        dependencies = set()
         file_node_id = f"file::{file_path}"
 
-        if file_node_id not in self.graph.nodes:
+        file_nodes = {node.file for node in self.graph.nodes.values() if node.type == "file"}
+        imports = (edge for edge in self.graph.edges
+                   if edge.source == file_node_id and edge.type in {"imports", "includes"})
+        return self._dependencies_for_file(file_path, file_nodes, imports)
+
+    def _dependencies_for_file(self, file_path, file_nodes, imports):
+        """Resolve a file's import edges using a file index shared by this operation."""
+        if f"file::{file_path}" not in self.graph.nodes:
             self.logger.warning(f"File {file_path} not found in graph")
             return []
 
-        file_nodes = {node.file for node in self.graph.nodes.values() if node.type == "file"}
-        # Find all import relationships
-        for edge in self.graph.edges:
-            if edge.source == file_node_id and edge.type in ["imports", "includes"]:
-                # Extract target file from the edge
-                target = edge.target
-                if target.startswith("file::"):
-                    dependencies.add(target.replace("file::", ""))
-                elif target.startswith("module::"):
-                    module = edge.metadata.get("module")
-                    if module is None:
-                        module = target.split("::", 1)[1]
-                    level = edge.metadata.get("level", 0)
-                    if level:
-                        package = list(Path(file_path).parent.parts)
-                        if level > len(package):
-                            continue
-                        module = ".".join(package[:len(package) - level + 1] +
-                                          ([module] if module else []))
-                    symbol = edge.metadata.get("symbol")
-                    modules = [module + "." + symbol, module] if symbol and symbol != "*" else [module]
-                    for candidate in modules:
-                        path = candidate.replace(".", "/")
-                        matches = file_nodes.intersection(
-                            {path + ".py", path + "/__init__.py",
-                             "src/" + path + ".py", "src/" + path + "/__init__.py"})
-                        if matches:
-                            if len(matches) == 1:
-                                dependencies.update(matches)
-                            break
+        dependencies = set()
+        for edge in imports:
+            # Extract target file from the edge
+            target = edge.target
+            if target.startswith("file::"):
+                dependencies.add(target.replace("file::", ""))
+            elif target.startswith("module::"):
+                module = edge.metadata.get("module")
+                if module is None:
+                    module = target.split("::", 1)[1]
+                symbol = edge.metadata.get("symbol")
+                modules = [module]
+                if symbol and symbol != "*":
+                    parents = _python_module_files(file_nodes, file_path, module, edge.metadata.get("level", 0))
+                    bindings = {}
+                    if len(parents) == 1:
+                        bindings = self.graph.nodes["file::" + next(iter(parents))].metadata.get("python_bindings", {})
+                    if symbol not in bindings:
+                        modules.insert(0, ".".join(filter(None, (module, symbol))))
+                for candidate in modules:
+                    matches = _python_module_files(file_nodes, file_path, candidate, edge.metadata.get("level", 0))
+                    if matches:
+                        if len(matches) == 1:
+                            dependencies.update(matches)
+                        break
 
         return sorted(dependencies)
 
