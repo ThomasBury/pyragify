@@ -5,7 +5,30 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] — unreleased branch work
+## [0.3.0] — 2026-11-10
+
+### Added
+
+- Complete source exports with a provenance manifest, source hashes, and line mappings.
+- Resolution of explicit Python function imports and aliases in root and `src/` layouts.
+- JavaScript and TypeScript arrow-function callers and callees, including nested callbacks.
+- A reproducible synthetic graph benchmark with recorded results and limitations.
+
+### Changed
+
+- Graph queries build a temporary adjacency map; cross-file resolution shares import indexes.
+- Cache version 8 rebuilds records created by earlier graph extractors.
+- Graphs remain experimental and opt-in. Dynamic calls, re-export chains, and JavaScript module resolution remain unsupported.
+
+### Fixed
+
+- Python shadowed names no longer resolve to unrelated local functions.
+- Definition defaults and decorators retain their containing execution owner.
+- JavaScript and TypeScript calls use parser positions, including same-line definitions and CRLF input.
+- Documentation deployment uses the locked docs dependency group on Python 3.12.
+- Export safety, CLI query validation, and relationship traversal fixes accumulated since 0.2.0.
+
+## [0.2.0] — 2026-04-12
 
 ### Added
 
@@ -60,16 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Memory leaks in large file processing
 - File encoding detection issues
 - Skip pattern matching inconsistencies
-
-## [Unreleased] - Development
-
-### Planned for v0.3.0
-
-- Graph visualization interface
-- Advanced query language for complex analysis
-- Plugin system for custom parsers
-- Integration with popular IDEs
-- Machine learning-based code pattern recognition
 
 ## [0.1.0] — date not recorded
 
@@ -128,32 +141,6 @@ Pyragify follows semantic versioning:
 - Latest major version receives active support
 - Previous major version receives security updates for 6 months
 - Older versions are community-supported
-
----
-
-## Future Roadmap
-
-### Planned for v0.3.0
-
-- Enhanced tree-sitter support with version compatibility fixes
-- Graph visualization interface
-- Advanced query language for complex analysis
-- Plugin system for custom parsers
-- Integration with popular IDEs
-
-### Planned for v0.4.0
-
-- Machine learning-based code pattern recognition
-- Automated documentation generation
-- Code quality analysis integration
-- Support for additional languages (Go, Rust, Ruby)
-
-### Long-term Vision
-
-- Real-time code analysis during development
-- Integration with CI/CD pipelines
-- Advanced refactoring suggestions
-- Cross-repository analysis capabilities
 
 ---
 
