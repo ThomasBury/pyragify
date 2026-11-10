@@ -215,6 +215,146 @@ Limits: files and the index are not split internally; users must raise the limit
 
 M2 PR review follow-up (2026-11-05): universal newline counting now handles CR-only and mixed CR/LF files without changing retained bytes. Regression cases check the source header, index, manifest, and exact byte mapping, including empty files, final line endings, and Unicode line separators inside source strings. Cache version 5 invalidates earlier cached line ranges. **123 tests pass on Python 3.9.25 and 3.12.7**; the documentation build passes with the existing API navigation notices.
 
+### Follow-up resolution plan (2026-11-10)
+
+This is the current task list; M1 and M2 above remain completed historical records. Implement M3–M7 in order, one independently reviewable milestone per session. Record checks and remaining limits before marking a milestone complete.
+
+The review retained the original priorities and regression checks, clarified completion criteria, separated hosted deployment from local completion, and removed performance gates inherited from the unvalidated PRD. Agreed scope: Python import resolution, JavaScript/TypeScript arrow relationships, and measured performance improvements. Graphs remain experimental and opt-in; add no dependencies, graph services, visualization, or general runtime-analysis engine.
+
+Reported performance at **100,000 source lines**: **18.1 s with graphs versus 8.7 s without**, or **9.4 s / approximately 108% overhead (2.08× total)**; related-context queries had a **119 ms median**. These figures have not been reproduced here. The original corpus, machine, cache state, and query settings are unknown. The archived <20% overhead and <100 ms goals remain reference points, not completion gates.
+
+#### M3 — Repair documentation deployment: implemented (2026-11-10)
+
+- [x] Replace the malformed folded `pip install` command in [.github/workflows/docs.yml](.github/workflows/docs.yml) with the existing uv workflow pattern: `astral-sh/setup-uv@v5`, Python **3.12**, and `uv sync --locked --group docs`.
+- [x] Deploy with `uv run --locked --group docs mkdocs gh-deploy --force`. Preserve existing deployment triggers, destination, and permissions.
+- [x] Execute the YAML-decoded installation command in a clean temporary environment and build the documentation with the deployment command's uv runner.
+
+Complete when installation and documentation building pass locally. Hosted deployment verification is a separate release follow-up and does not block M4.
+
+M3 implementation and verification:
+
+- The workflow uses the existing locked docs dependency group instead of a duplicated pip dependency list. Python is constrained to 3.12, within the package's `<3.13` requirement.
+- A temporary assert-based check parsed the actual workflow YAML, checked its Python/action settings and install/deploy argument lists, and executed the decoded install command with a fresh environment and package cache.
+- `uv sync --locked --group docs`: passed on **Python 3.12.7**, installing **60 packages**. The lockfile hash was unchanged after installation and building.
+- `uv run --locked --group docs mkdocs build --site-dir /tmp/pyragify-m3-cbmhrjfa/site`: passed; only the existing API pages outside navigation notices remain. The generated site contains `index.html`.
+- Verification artifacts and the isolated environment are under `/tmp/pyragify-m3-cbmhrjfa`.
+- All YAML-decoded shell steps pass `bash -n`; deployment triggers, permissions, and destination arguments match the original workflow. `git diff --check`: passed.
+
+Release follow-up:
+
+- [ ] After an authorized merge, verify the hosted docs job and published site. No deployment was performed during local verification.
+
+#### M4 — Correct Python shadowing and call ownership: implemented (2026-11-10)
+
+- [x] Add regressions before changing resolution: parameter shadowing, local assignment (including assignment later in a function), import shadowing, nested scopes, and `global`/`nonlocal`.
+- [x] Build binding information per lexical scope before resolving calls. Parameters, assignments, imports, and other bindings prevent fallback to an unrelated function. Leave uncertain callable values unresolved.
+- [x] Record call ownership during AST traversal. Visit defaults, keyword-only defaults, and decorators in the containing execution scope; visit function bodies in their own scope. Apply the same handling to async definitions.
+- [x] Preserve that owner through normalization instead of replacing it using line containment. Module-level definition expressions belong to the file; nested expressions belong to the enclosing function or class body.
+- [x] Retain source positions sufficient to distinguish definitions and calls sharing a line.
+
+Complete when exact-edge assertions reject false callees and callers, while existing ordinary function, nested-function, and method relationships remain correct. Use the existing graph extraction and normalization paths in [graph.py](src/pyragify/graph.py) and [processor.py](src/pyragify/processor.py).
+
+M4 implementation and verification:
+
+- Added 28 initial regression cases before changing the resolver; all failed against the previous implementation. Expanded coverage to 46 cases, including positional-only/keyword-only/variadic parameters, loop/context-manager/exception/pattern bindings, rebinding, class scopes, lambdas, comprehensions, and declarations inherited by closures.
+- Python extraction collects bindings before resolving calls. Shadowed names and uncertain receivers retain unresolved placeholders rather than pointing at unrelated local definitions. Existing ordinary functions, nested functions, and methods keep their scoped IDs and relationships.
+- Defaults, keyword-only defaults, decorators, and function bodies record their execution owner during AST traversal, including async definitions. Normalization maps owners and definitions by source line and UTF-8 byte column rather than recomputing Python call ownership from line containment.
+- Cache version **6** invalidates earlier extracted records. A regression proves JSON reload and fresh/cached graph equality, bypasses workers on reuse, rebuilds a deliberately stale version-5 cache, and checks retained source bytes, hashes, and manifest mappings with Unicode and CRLF input.
+- `uv run --locked pytest -q`: **169 passed on Python 3.12.7**.
+- `UV_PROJECT_ENVIRONMENT=/tmp/pyragify-m4-py39 uv run --locked --python 3.9 pytest -q`: **165 passed, 4 skipped on Python 3.9.25**. Only Python 3.10+ pattern-matching syntax cases are skipped.
+- Updated the graph guide. `uv run --locked --group docs mkdocs build --site-dir /tmp/pyragify-m4-site`: passed with the existing API pages outside navigation notices. `git diff --check`: passed.
+- Preserved the pre-existing documentation workflow and plan changes. No dependencies, CLI options, public signatures, or graph JSON top-level fields changed.
+
+Limits: binding analysis does not simulate execution order or runtime callable values. Lambda/comprehension bindings are separate, but their calls share the nearest named execution owner. Imported callees remain unresolved until M5; arrow relationships and performance work remain M6 and M7. No hosted deployment or large-repository benchmark was performed.
+
+#### M5 — Resolve imported Python calls: implemented (2026-11-10)
+
+- [x] Resolve explicit function imports and aliases, module-qualified calls, and relative imports against definitions at the repository root or under `src/`.
+- [x] Share the existing exact module-path matching between dependency queries and call resolution. Ambiguous paths remain unresolved.
+- [x] Carry import bindings and lexical scope through per-file graph serialization. Reuse M4's shadowing rules.
+- [x] Retarget each applicable call edge in the aggregate graph. Preserve import/file dependency edges and unrelated unresolved calls; never globally rename a shared `function::name` placeholder.
+- [x] Test two modules exporting the same name, aliases, package initializers, scoped imports, and shadowing. Repeat after JSON reload, cache reuse, and changes or deletion of the imported definition.
+
+Complete when `from b import run; run()` reaches `b.py::run`, never an unrelated `a.py::run`, and hierarchy/context queries follow the corrected edge. Wildcard imports, runtime imports, re-export chains, and JavaScript module resolution remain unsupported.
+
+M5 implementation and verification:
+
+- Added 39 initial cases before implementation: **25 failed, 14 passed** against M4. Expanded to **47 cases**, covering root and `src/` layouts, aliases, dotted module imports, package initializers, relative imports, nested/scoped bindings, receiver shadowing, and uncertain exports.
+- Per-call metadata records the selected lexical import, its source/scope position, and the original unresolved target. File-node metadata records unambiguous module-level function bindings and names that block submodule inference. Both survive per-file JSON serialization.
+- Aggregate resolution copies and retargets individual call edges, preserving per-file graphs, import edges, dependencies, and unrelated unresolved calls. Placeholder deduplication distinguishes import evidence so a shadowed lambda call cannot absorb an imported call from the same named owner. Unused external placeholders are removed only when no edge references them.
+- Call resolution and dependency queries share exact module-path matching, including relative imports under `src/`. Duplicate root/src or module/package paths remain unresolved. Known package bindings take precedence over same-named submodule files.
+- Cache version **7** invalidates M4 records. Regression checks prove worker-free reuse, version-6 rebuilding, JSON reload, repeated resolution, importer-cache reuse after target changes/renaming/deletion/recreation, and equality with fresh exports. Source bytes, hashes, and manifest mappings remain exact, including Unicode and CRLF input.
+- Exact-edge, hierarchy, and related-context assertions prove `from b import run; run()` reaches `b.py::run`, preserving an unrelated `a.py::run` and unresolved shadowed calls.
+- `uv run --locked pytest -q`: **216 passed on Python 3.12.7**.
+- `UV_PROJECT_ENVIRONMENT=/tmp/pyragify-m4-py39 uv run --locked --python 3.9 pytest -q`: **212 passed, 4 skipped on Python 3.9.25**. The skips remain Python 3.10+ pattern-matching cases.
+- Updated the graph guide. `uv run --locked --group docs mkdocs build --site-dir /tmp/pyragify-m5-site`: passed with the existing API pages outside navigation notices. `git diff --check`: passed.
+- Preserved all preceding working-tree changes. No dependencies, CLI options, public signatures, or graph JSON top-level fields changed.
+
+Limits: targets must be unambiguous module-level functions. Wildcards, re-export chains, dynamic imports, uncertain or repeated bindings, dynamic receivers/module attributes, custom import roots, and JavaScript module resolution remain unresolved. Execution order is not simulated. No hosted deployment or performance benchmark was performed; M6 and M7 remain untouched.
+
+#### M6 — Correct arrow-function relationships: implemented (2026-11-10)
+
+- [x] Recover names from direct variable-bound arrow functions using the existing JavaScript/TypeScript parser.
+- [x] Use parser ancestry and source positions to identify callers and scopes. Preserve stable IDs for existing named symbols; give anonymous callbacks deterministic identities based on source position.
+- [x] Resolve calls to named arrows and calls within expression/block bodies. Leave unsupported bindings and uncertain rebinding unresolved.
+- [x] Test JavaScript and TypeScript with async arrows, nested arrows, anonymous callbacks, Unicode, and multiple definitions/calls on one line.
+
+Complete when arrows act as the correct callers and callees without absorbing neighboring calls or breaking existing function relationships.
+
+M6 implementation and verification:
+
+- Added 50 initial regression cases before implementation; all failed against M5. Expanded to **74 cases** covering JavaScript and TypeScript, async arrows, expression/block bodies, nested arrows, anonymous callbacks, Unicode byte columns, CRLF, same-line definitions/calls, and uncertain bindings.
+- Shared tree-sitter analysis recovers direct variable-bound arrow names, lexical bindings, enclosing symbols, and execution owners. Existing named function IDs remain stable; anonymous callbacks use deterministic `anonymous@line:column` names. Function expressions and methods own their calls rather than lending them to neighboring arrows.
+- Calls resolve only unambiguous local function declarations or direct variable-bound arrows. Parameters, destructuring, imports, local declarations, repeated bindings, and writes prevent unrelated matches. Block/function boundaries distinguish lexical declarations from `var`; TypeScript namespaces isolate their bindings and unsupported value declarations block false targets.
+- Normalization uses parser byte positions instead of line containment for JavaScript/TypeScript callers and callees. Symbol and dependency parsing both retain CRLF bytes so their offsets agree. Same-line and nested calls keep their actual owners.
+- Cache version **8** invalidates M5 records. Regressions prove JSON reload, worker-free reuse, version-7 rebuilding, fresh/cached graph equality, and exact retained source bytes, hashes, and manifest mappings with Unicode and CRLF input. Hierarchy and related-context queries follow the corrected edges.
+- `uv run --locked pytest -q`: **290 passed on Python 3.12.7**.
+- `UV_PROJECT_ENVIRONMENT=/tmp/pyragify-m4-py39 uv run --locked --python 3.9 pytest -q`: **286 passed, 4 skipped on Python 3.9.25**. The skips remain Python 3.10+ pattern-matching cases.
+- Updated the graph guide. `uv run --locked --group docs mkdocs build --site-dir /tmp/pyragify-m6-site`: passed with the existing API pages outside navigation notices. `git diff --check`: passed.
+- Preserved preceding working-tree changes. No dependencies, CLI options, public signatures, or graph JSON top-level fields changed.
+
+Limits: aliases, assignment-bound or object-property arrows, member calls, JavaScript module resolution, and namespace/receiver lookup remain unsupported. Repeated or reassigned bindings remain unresolved; execution order, dynamic scope changes, and runtime callable values are not simulated. Anonymous identities change when source positions change. No hosted deployment or performance benchmark was performed; M7 remains untouched.
+
+#### M7 — Benchmark and deliver bounded performance improvements: implemented (2026-11-10)
+
+- [x] Add one standard-library benchmark harness under `scripts/`. Use a deterministic **100,000-line Python corpus: 1,000 files, 100 lines and 10 functions per file**, with local calls and explicit imports. Label it synthetic; do not claim it reproduces the original workload.
+- [x] Record revision, environment, worker count, corpus hash, and node/edge counts. Keep outputs outside the input tree and file selection constant. Run five graph-enabled/disabled export pairs, separating empty application caches from reusable caches. Report medians and ranges.
+- [x] Measure 20 fixed function queries at depth 2, without relationship filters, after warm-up. Record median/p95 across 30 repetitions per query. Report JSON loading separately.
+- [x] Profile the corrected implementation before optimizing. Include representative per-file extraction because process-worker costs are absent from a parent-only profile.
+- [x] Replace repeated full-edge scans in related-context traversal with an adjacency map built inside each query invocation, preserving edge order. Include construction time in query latency; use `deque` for traversal.
+- [x] Address one highest-cost repeated export scan identified by profiling. Retain the change only if repeated measurements demonstrate improvement.
+- [x] Compare canonical graph contents and query results before/after optimization. Record latency and memory tradeoffs.
+
+Complete separately: benchmark reproducibility, query improvement, and export improvement. An improvement checkbox stays open if gains are indistinguishable from measurement noise. Historical targets do not create an unlimited optimization project.
+
+M7 implementation and verification:
+
+- **Benchmark reproducibility: complete.** Added [scripts/benchmark_graph.py](scripts/benchmark_graph.py), using only the standard library and the installed project. The deterministic synthetic corpus contains exactly **1,000 files, 100 lines and 10 functions per file**, with local calls and explicit imports. Corpus SHA-256: `c996dd67e4938253599f6a41e081ff420dd5eac3e35a278c088185783d5818ec`.
+- Recorded revision, source/harness hashes, Python/dependency/platform details, configured workers, corpus hash, graph counts, raw samples, and selected profile counters in [docs/benchmarks/m7.json](docs/benchmarks/m7.json). Measurements used Python **3.12.7**, Linux 6.8 x86-64, an Intel Core i5-7300U, and **four workers**. Both working trees share base revision `196ba90`; file hashes identify the uncommitted implementations.
+- Ran **five graph-enabled/disabled pairs for each cache state, before and after** (40 unprofiled exports, plus two separate profiled exports). Outputs remained outside the corpus. Every export verified identical selection, retained source bytes, hashes, and manifest mappings; cold runs reused zero records, reused runs reused all **1,000**.
+- Profiled the corrected implementation before editing production code. The repeated export scan was **1,000 whole-graph dependency queries**, costing **4.005 s cumulatively under profiling**. A separate profile covered ten representative worker extractions, including AST analysis and per-file graph serialization. JSON serialization was the larger overall export cost and remains unchanged.
+- **Query improvement: complete.** Related-context traversal builds an adjacency map inside each invocation, preserves original edge order and bidirectional relationship paths, and uses `deque`. Twenty fixed imported-entrypoint queries (`function_0` in every fiftieth module), depth 2 and no filters, ran 30 times each after warm-up. Aggregate median fell **76.7 ms → 23.8 ms (69.0%)**; p95 fell **121.5 ms → 84.8 ms**. Timings include map construction. JSON read/decode and graph model construction were measured separately; their code was unchanged and differing load times are not an optimization claim.
+- **Export improvement: complete.** One resolution pass now shares a file/import index rather than scanning the aggregate graph per file; public dependency queries reuse the same resolution logic. Under profiling, the shared helper took **0.021 s**, and the entire resolution pass fell **4.619 s → 0.581 s**. Unprofiled graph-enabled medians fell **24.615 s → 20.055 s** with empty application caches and **16.025 s → 12.045 s** with reused caches. Retained the change based on repeated reused-cache improvement and the removed profiled scan; cold ranges overlap substantially, so its median alone does not establish a repeatable cold-export gain.
+- Canonical graph contents **and edge order** matched before/after: **12,000 nodes, 32,000 edges**, canonical SHA-256 `d7c67d32f3e53ecfb77bd3175b8dac5dce2ebe5c0d3b1fbb3ea6eae3c7b6c275`. All ordered query results and all fresh/reused graph fingerprints matched. The delivered source and harness hashes match the measured candidate.
+- Recorded memory tradeoffs: representative query peak traced allocation rose **11.4 KiB → 1.68 MiB**, excluding the loaded graph. Median parent peak RSS stayed about **130 MiB cold / 136 MiB reused** for graph-enabled exports. Parent and largest completed-child RSS are recorded separately; no total process-pool peak is claimed. Indexes are operation-local, with no stale persistent cache.
+- Added **14 regressions** covering forward/reverse traversal, cycles, self-edges, depth, filters, parallel relationships, edge-order changes, mutation on an existing query instance, exact/ambiguous module paths, package bindings, includes, and repeated resolution. Harness assertions also check corpus dimensions, provenance, cache state, graph/query equivalence, invalid worker counts, and protection of existing output directories. No timing assertions enter unit tests.
+- `uv run --locked pytest -q`: **304 passed on Python 3.12.7**. `UV_PROJECT_ENVIRONMENT=/tmp/pyragify-m4-py39 uv run --locked --python 3.9 pytest -q`: **300 passed, 4 skipped on Python 3.9.25**; skips remain Python 3.10+ pattern-matching cases.
+- Updated [the graph guide](docs/user-guide/knowledge-graph.md) with reproduction commands, full timing ranges, loading costs, memory costs, and limits. `uv run --locked --group docs mkdocs build --site-dir /tmp/pyragify-m7-site`: passed with existing API pages outside navigation notices. `git diff --check`: passed.
+- Preserved preceding working-tree changes, including `processor.py` byte-for-byte. No dependencies, public signatures, CLI options, or graph JSON top-level fields changed. Cache version remains **8** because extracted records are unchanged.
+
+Limits: these are sequential runs on a shared development machine with OS/filesystem caches left intact; only application-cache state is controlled. Cold-export ranges overlap; graph-disabled variation is a noise control. The synthetic corpus and imported-entrypoint queries do not reproduce the unknown historical workload or establish general repository performance. Adjacency adds temporary memory proportional to graph size. The harness requires a Unix-like system for resource measurements. Original performance targets, whole-pool peak memory, hosted deployment, actual NotebookLM ingestion, and LLM answer quality remain unverified. No additional optimization was started.
+
+#### Shared interfaces and verification
+
+- Keep CLI options, public signatures, and graph JSON top-level fields unchanged. Add source/scope metadata within existing metadata dictionaries.
+- Advance the cache version for each milestone changing extracted records. Prove old records rebuild and fresh/cached graph semantics agree.
+- For M4–M6, run focused regressions and `uv run --locked pytest -q` on Python **3.9 and 3.12**.
+- For M7, test traversal direction, cycles, depth, filters, parallel relationships, and query-after-mutation behavior; rerun the full correctness suite.
+- Verify retained source bytes, hashes, and manifest mappings. Whole-manifest byte equality is unnecessary because cache/diagnostic metadata can change.
+- Update [the graph guide](docs/user-guide/knowledge-graph.md) and build documentation after behavior changes. Keep timing assertions outside unit tests.
+
+Review evidence: temporary fixtures reproduced shadowed Python calls reaching unrelated functions, default-expression calls assigned to the new function, imported calls staying unresolved, and named arrows appearing as `anonymous`. The full suite and large benchmark were not rerun during the planning review or the workflow-only M3 implementation. M4–M7 subsequently reran the full suite as recorded above. M7 also ran the standardized synthetic benchmark; the original workload remains unreproduced. The listed implementation milestones are complete.
+
 ## Scope cuts and verification limits
 
 Defer graph visualization, GraphML, more language-specific analysis, embeddings, vector stores, chat servers, IDE plugins, ML pattern recognition, automatic architecture narratives, and extra export formats. There is no demonstrated need for these in the handoff workflow.
