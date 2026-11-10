@@ -11,6 +11,7 @@ import logging
 import re
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -40,7 +41,9 @@ def is_function_like_node(node: "GraphNode") -> bool:
     return node.type in FUNCTION_NODE_TYPES
 
 
-def get_tree_sitter_language_and_parser(language_name: str) -> Tuple[Language, Parser]:
+@cache
+def _load_tree_sitter_language(language_name: str) -> Language:
+    """Load each immutable grammar once per process."""
     factories = {
         "javascript": tree_sitter_javascript.language,
         "typescript": tree_sitter_typescript.language_typescript,
@@ -51,7 +54,12 @@ def get_tree_sitter_language_and_parser(language_name: str) -> Tuple[Language, P
         "html": tree_sitter_html.language,
         "css": tree_sitter_css.language,
     }
-    language = Language(factories[language_name]())
+    return Language(factories[language_name]())
+
+
+def get_tree_sitter_language_and_parser(language_name: str) -> Tuple[Language, Parser]:
+    """Return the shared grammar and a fresh parser for an analysis."""
+    language = _load_tree_sitter_language(language_name)
     return language, Parser(language)
 
 

@@ -25,7 +25,9 @@ def test_native_grammar_loading(language, source, expression, expected):
     grammar, parser = get_tree_sitter_language_and_parser(language)
     assert isinstance(grammar, Language)
     assert isinstance(parser, Parser)
-    assert get_tree_sitter_language_and_parser(language)[1] is not parser
+    shared_grammar, fresh_parser = get_tree_sitter_language_and_parser(language)
+    assert shared_grammar is grammar
+    assert fresh_parser is not parser
     root = parser.parse(source.encode()).root_node
     assert not root.has_error
     matches = QueryCursor(Query(grammar, expression)).matches(root)
