@@ -51,7 +51,94 @@ uv sync --locked --group dev --group docs
 pip install -e .
 ```
 
-## Verification
+## Agent skills
+
+Pyragify 0.5.0 bundles two self-contained skills:
+`pyragify-export` covers source-only exports and manifest inspection;
+`pyragify-graph` covers experimental graph export and queries with source checks.
+Versions before 0.5.0 do not contain them. Once 0.5.0 or later is available on
+your package index, install from a consuming project using Python 3.12:
+
+```bash
+uv add --dev pyragify
+uvx library-skills install --skill pyragify-export --skill pyragify-graph
+uvx library-skills scan --json
+```
+
+PyPI publication is separate from the GitHub release. Until the package is on
+your index, use the [0.5.0 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
+wheel URL so other developers and CI can sync the same dependency:
+
+```bash
+uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
+```
+
+uv records that wheel URL under `[tool.uv.sources]`, so normal upgrades keep
+using the same wheel. After 0.5.0 or later is available on your package index,
+remove only the `pyragify` entry from `[tool.uv.sources]` in `pyproject.toml`, then
+run `uv lock --upgrade-package pyragify` and `uv sync --python 3.12` to resolve
+and install from the index.
+
+Both commands assume the consuming project's declared `requires-python` is
+`>=3.12,<3.13`. uv resolves against that entire range, not just the interpreter
+currently running. If your project supports other Python versions, add
+`--marker 'python_version == "3.12"'` to either `uv add` command to limit this
+development dependency to Python 3.12. The marker does not select an interpreter.
+Before adding the dependency, select Python 3.12 for the project environment:
+
+```bash
+uv python pin 3.12
+uv sync --python 3.12
+```
+
+Then run the chosen `uv add` command with the marker. Use `uv run pyragify` for
+exports; `uvx library-skills` scans the project's now-synced `.venv`. See
+[uv's resolution rules](https://docs.astral.sh/uv/concepts/resolution/).
+
+[Library Skills](https://library-skills.io/create/) discovers skills inside
+installed library packages. It scans the project's environment, so a global
+installation or an isolated `uvx pyragify` CLI alone does not support this workflow.
+Run discovery and installation from the project root with its environment synced.
+
+The default targets are `.agents/skills/pyragify-export` and
+`.agents/skills/pyragify-graph`. The [official CLI options](https://library-skills.io/reference/)
+include `--claude` to install additional targets under `.claude/skills` and `--copy`
+to create ordinary directories where symlinks are unavailable:
+
+```bash
+uvx library-skills install --skill pyragify-export --skill pyragify-graph --claude
+# Alternative for environments without symlinks:
+uvx library-skills install --skill pyragify-export --skill pyragify-graph --copy
+```
+
+Symlinked skills follow the installed package version. Copied skills require
+refreshing after upgrades: remove the old copied skill directories and reinstall
+with `--copy`, preserving any local edits separately.
+
+To use a source checkout containing these skills:
+
+```bash
+git clone https://github.com/ThomasBury/pyragify.git
+cd pyragify
+uv sync --locked
+uvx library-skills scan --all --json
+uvx library-skills install --skill pyragify-export --skill pyragify-graph
+```
+
+`--all` includes the checkout package itself, which is not one of its own
+declared dependencies. In a consuming project, the default scan includes
+Pyragify because it is a declared dependency.
+
+The local packaging check uses Library Skills `0.0.19` against isolated wheel,
+editable, and source-distribution installations:
+
+```bash
+uv run --locked python scripts/check_skill_packaging.py
+```
+
+Installation from PyPI remains unverified until PyPI publication.
+
+## CLI verification
 
 After installation, verify that Pyragify is working:
 

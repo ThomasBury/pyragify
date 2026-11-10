@@ -30,3 +30,6 @@ jobs:
 
       - name: Run tests
         run: uv run --locked pytest tests
+
+      - name: Verify bundled skill packaging and installation
+        run: uv run --locked python scripts/check_skill_packaging.py

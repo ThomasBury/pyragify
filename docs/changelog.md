@@ -5,6 +5,16 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-11-10
+
+### Added
+
+- Bundle `pyragify-export` and `pyragify-graph` agent skills with the Python
+  package for discovery and installation through Library Skills.
+- Verify skill contents, executable examples, release archives, and isolated
+  consumer installations locally and in test CI. PyPI publication is a separate
+  step; versions before 0.5.0 do not include the bundled skills.
+
 ## [0.4.0] — 2026-11-10
 
 ### Changed
