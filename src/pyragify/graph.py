@@ -9,23 +9,20 @@ import ast
 import json
 import logging
 import re
-import warnings
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-# Tree-sitter imports (conditionally imported)
-try:
-    from tree_sitter import Language, Node, Parser
-    from tree_sitter_languages import get_language, get_parser
-    TREE_SITTER_AVAILABLE = True
-except ImportError:
-    TREE_SITTER_AVAILABLE = False
-    # Define dummy types for type hinting if tree-sitter is not available
-    class Language: pass
-    class Node: pass
-    class Parser: pass
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
+import tree_sitter_c
+import tree_sitter_cpp
+import tree_sitter_css
+import tree_sitter_go
+import tree_sitter_html
+import tree_sitter_java
+import tree_sitter_javascript
+import tree_sitter_typescript
 
 logger = logging.getLogger(__name__)
 
@@ -44,26 +41,22 @@ def is_function_like_node(node: "GraphNode") -> bool:
 
 
 def get_tree_sitter_language_and_parser(language_name: str) -> Tuple[Language, Parser]:
-    if not TREE_SITTER_AVAILABLE:
-        raise RuntimeError("tree-sitter support is not available")
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=r"Language\(path, name\) is deprecated.*",
-            category=FutureWarning,
-        )
-        language = get_language(language_name)
-        parser = get_parser(language_name)
-    return language, parser
+    factories = {
+        "javascript": tree_sitter_javascript.language,
+        "typescript": tree_sitter_typescript.language_typescript,
+        "java": tree_sitter_java.language,
+        "c": tree_sitter_c.language,
+        "cpp": tree_sitter_cpp.language,
+        "go": tree_sitter_go.language,
+        "html": tree_sitter_html.language,
+        "css": tree_sitter_css.language,
+    }
+    language = Language(factories[language_name]())
+    return language, Parser(language)
 
 
-def tree_sitter_match_captures(query: Any, match: Any) -> Dict[str, Node]:
-    if isinstance(match, tuple) and len(match) == 2 and isinstance(match[1], dict):
-        return {
-            name: nodes[0] if isinstance(nodes, list) else nodes
-            for name, nodes in match[1].items()
-        }
-    return {query.capture_names[i]: node for i, node in match}
+def tree_sitter_match_captures(match: Tuple[int, Dict[str, List[Node]]]) -> Dict[str, Node]:
+    return {name: nodes[0] for name, nodes in match[1].items()}
 
 
 @dataclass
@@ -489,6 +482,7 @@ class _JavaScriptAnalysis:
     def __init__(self, root):
         self.chunks = []
         self.calls = []
+        self.class_scopes = {}
         self.writes = []
         self._visit(root, _JavaScriptScope(function=True), None)
         for scope, name in self.writes:
@@ -515,7 +509,7 @@ class _JavaScriptAnalysis:
         name = node.child_by_field_name("name") if is_function or is_class else None
         if node.type in {"function_declaration", "generator_function_declaration",
                          "class_declaration", "abstract_class_declaration"}:
-            self._bind(name, scope, node.start_byte if is_function else None)
+            self._bind(name, scope, node)
 
         if is_function or is_class:
             if node.type == "arrow_function":
@@ -534,8 +528,10 @@ class _JavaScriptAnalysis:
             })
             owner = node.start_byte
             scope = _JavaScriptScope(scope, function=is_function)
+            if is_class:
+                self.class_scopes[node.start_byte] = scope
             if node.type in {"function", "function_expression", "generator_function", "class"}:
-                self._bind(name, scope, node.start_byte if is_function else None)
+                self._bind(name, scope, node)
             if is_function:
                 self._bind(node.child_by_field_name("parameters") or node.child_by_field_name("parameter"), scope)
         elif node.type in {"statement_block", "for_statement", "for_in_statement", "catch_clause", "switch_body"}:
@@ -548,7 +544,7 @@ class _JavaScriptAnalysis:
                     binding_scope = binding_scope.parent
             value = node.child_by_field_name("value")
             self._bind(node.child_by_field_name("name"), binding_scope,
-                       value.start_byte if value and value.type == "arrow_function" else None)
+                       value if value and value.type == "arrow_function" else None)
         elif node.type in {"internal_module", "module"}:
             self._bind(node.child_by_field_name("name"), scope)
             scope = _JavaScriptScope(scope, function=True)
@@ -774,7 +770,7 @@ class GraphBuilder:
                 definition = edge.metadata["definition"]
                 source = python_definitions.get(tuple(owner), file_node_id) if owner else file_node_id
                 target = python_definitions.get(tuple(definition), edge.target) if definition else edge.target
-            elif language in {"javascript", "typescript"} and edge.type == "calls":
+            elif language in {"javascript", "typescript"} and edge.type in {"calls", "inherits"}:
                 source = javascript_definitions.get(edge.metadata.get("owner"), file_node_id)
                 target = javascript_definitions.get(edge.metadata.get("definition"), edge.target)
             else:
@@ -782,7 +778,7 @@ class GraphBuilder:
                 target = self._normalize_reference_id(graph, file_path, edge.target, line)
                 if edge.type == "calls":
                     source = self._find_enclosing_node_id(graph, file_path, line) or file_node_id
-            if edge.type == "inherits":
+            if edge.type == "inherits" and language not in {"javascript", "typescript"}:
                 subclass = self._find_enclosing_node_id(
                     graph, file_path, line, {"class", "java_class", "javascript_class", "cpp_class"})
                 if subclass:
@@ -883,53 +879,53 @@ class GraphBuilder:
         file_id = self._file_node_id(file_path)
 
         try:
-            if TREE_SITTER_AVAILABLE:
+            language_name = "cpp" if file_path.suffix == ".cpp" else "c"
+            language, parser = get_tree_sitter_language_and_parser(language_name)
+            tree = parser.parse(bytes(content, "utf8"))
+            root_node = tree.root_node
 
-                language_name = "cpp" if file_path.suffix == ".cpp" else "c"
-                language, parser = get_tree_sitter_language_and_parser(language_name)
-                tree = parser.parse(bytes(content, "utf8"))
-                root_node = tree.root_node
+            # Extract include statements
+            include_query = """
+            (preproc_include
+              path: [(string_literal) (system_lib_string)] @include_path
+            )
+            """
 
-                # Extract include statements
-                include_query = """
-                (preproc_include
-                  path: [(string_literal) (system_lib_string)] @include_path
-                )
-                """
+            # Extract function calls
+            call_query = """
+            (call_expression
+              function: (identifier) @function_name
+            )
+            """
 
-                # Extract function calls
-                call_query = """
-                (call_expression
-                  function: (identifier) @function_name
-                )
-                """
+            # Extract struct/class declarations
+            struct_query = """
+            (struct_specifier
+              name: (type_identifier) @struct_name
+            )
+            """
 
-                # Extract struct/class declarations
-                struct_query = """
-                (struct_specifier
-                  name: (type_identifier) @struct_name
-                )
-                """
+            class_query = """
+            (class_specifier
+              name: (type_identifier) @class_name
+            )
+            """
 
-                class_query = """
-                (class_specifier
-                  name: (type_identifier) @class_name
-                )
-                """
-
-                for query_str, query_type in [
-                    (include_query, "include"),
-                    (call_query, "call"),
-                    (struct_query, "struct"),
-                    (class_query, "class")
-                ]:
-                    try:
-                        query = language.query(query_str)
-                        for match in query.matches(root_node):
-                            captures = tree_sitter_match_captures(query, match)
-                            self._process_cpp_captures(captures, query_type, file_id, edges, content)
-                    except Exception as e:
-                        logger.debug(f"Tree-sitter query failed for C/C++ {query_type}: {e}")
+            queries = [
+                (include_query, "include"),
+                (call_query, "call"),
+                (struct_query, "struct"),
+            ]
+            if language_name == "cpp":
+                queries.append((class_query, "class"))
+            for query_str, query_type in queries:
+                try:
+                    query = Query(language, query_str)
+                    for match in QueryCursor(query).matches(root_node):
+                        captures = tree_sitter_match_captures(match)
+                        self._process_cpp_captures(captures, query_type, file_id, edges, content)
+                except Exception as e:
+                    logger.warning(f"Tree-sitter query failed for C/C++ {query_type}: {e}")
 
             # Fallback to regex for basic include detection
             if not edges:
@@ -998,48 +994,46 @@ class GraphBuilder:
         file_id = self._file_node_id(file_path)
 
         try:
-            if TREE_SITTER_AVAILABLE:
+            language, parser = get_tree_sitter_language_and_parser("java")
+            tree = parser.parse(bytes(content, "utf8"))
+            root_node = tree.root_node
 
-                language, parser = get_tree_sitter_language_and_parser("java")
-                tree = parser.parse(bytes(content, "utf8"))
-                root_node = tree.root_node
+            # Extract import statements
+            import_query = """
+            (import_declaration
+              (scoped_identifier) @import_path
+            )
+            """
 
-                # Extract import statements
-                import_query = """
-                (import_declaration
-                  (scoped_identifier) @import_path
-                )
-                """
+            # Extract method calls
+            method_call_query = """
+            (method_invocation
+              name: (identifier) @method_name
+            )
+            """
 
-                # Extract method calls
-                method_call_query = """
-                (method_invocation
-                  name: (identifier) @method_name
-                )
-                """
+            # Extract class declarations and inheritance
+            class_query = """
+            (class_declaration
+              name: (identifier) @class_name
+              superclass: (superclass
+                (type_identifier) @parent_class
+              )?
+            )
+            """
 
-                # Extract class declarations and inheritance
-                class_query = """
-                (class_declaration
-                  name: (identifier) @class_name
-                  superclass: (superclass
-                    (type_identifier) @parent_class
-                  )?
-                )
-                """
-
-                for query_str, query_type in [
-                    (import_query, "import"),
-                    (method_call_query, "method_call"),
-                    (class_query, "class")
-                ]:
-                    try:
-                        query = language.query(query_str)
-                        for match in query.matches(root_node):
-                            captures = tree_sitter_match_captures(query, match)
-                            self._process_java_captures(captures, query_type, file_id, edges, content)
-                    except Exception as e:
-                        logger.debug(f"Tree-sitter query failed for Java {query_type}: {e}")
+            for query_str, query_type in [
+                (import_query, "import"),
+                (method_call_query, "method_call"),
+                (class_query, "class")
+            ]:
+                try:
+                    query = Query(language, query_str)
+                    for match in QueryCursor(query).matches(root_node):
+                        captures = tree_sitter_match_captures(match)
+                        self._process_java_captures(captures, query_type, file_id, edges, content)
+                except Exception as e:
+                    logger.warning(f"Tree-sitter query failed for Java {query_type}: {e}")
 
             # Fallback to regex for basic import detection
             if not edges:
@@ -1188,61 +1182,63 @@ class GraphBuilder:
         file_id = self._file_node_id(file_path)
 
         try:
-            # Try tree-sitter parsing first
-            if TREE_SITTER_AVAILABLE:
+            language_name = "typescript" if file_path.suffix == ".ts" else "javascript"
+            language, parser = get_tree_sitter_language_and_parser(language_name)
+            tree = parser.parse(bytes(content, "utf8"))
+            root_node = tree.root_node
 
-                language_name = "typescript" if file_path.suffix == ".ts" else "javascript"
-                language, parser = get_tree_sitter_language_and_parser(language_name)
-                tree = parser.parse(bytes(content, "utf8"))
-                root_node = tree.root_node
+            # Extract import statements
+            import_query = """
+            (import_statement source: (string) @source) @statement
+            """
 
-                # Extract import statements
-                import_query = """
-                (import_statement source: (string) @source) @statement
-                """
+            # Extract require statements
+            require_query = """
+            (call_expression
+              function: (identifier) @require
+              arguments: (arguments (string) @module)
+              (#eq? @require "require")
+            )
+            """
 
-                # Extract require statements
-                require_query = """
-                (call_expression
-                  function: (identifier) @require
-                  arguments: (arguments (string) @module)
-                  (#eq? @require "require")
-                )
-                """
+            analysis = _JavaScriptAnalysis(root_node)
+            for function, scope, owner in analysis.calls:
+                name = function.text.decode("utf-8")
+                definition = scope.lookup(name)
+                edges.append(GraphEdge(
+                    source=file_id, target=f"function::{name}", type="calls",
+                    metadata={"line": function.start_point[0] + 1, "column": function.start_point[1],
+                              "owner": owner, "definition": definition.start_byte
+                              if definition and definition.type in analysis.function_types else None},
+                ))
 
-                analysis = _JavaScriptAnalysis(root_node)
-                for function, scope, owner in analysis.calls:
-                    name = function.text.decode("utf-8")
-                    edges.append(GraphEdge(
-                        source=file_id, target=f"function::{name}", type="calls",
-                        metadata={"line": function.start_point[0] + 1, "column": function.start_point[1],
-                                  "owner": owner, "definition": scope.lookup(name)},
-                    ))
+            # Extract class declarations and inheritance
+            class_query = """
+            (class_declaration
+              name: (identifier) @class_name
+              (class_heritage (identifier) @parent_class)?
+            )
+            """ if language_name == "javascript" else """
+            (class_declaration
+              name: (type_identifier) @class_name
+              (class_heritage
+                (extends_clause value: (identifier) @parent_class)
+              )?
+            )
+            """
 
-                # Extract class declarations and inheritance
-                class_query = """
-                (class_declaration
-                  name: (identifier) @class_name
-                  heritage_clause: (heritage_clause
-                    (extends_clause
-                      (identifier) @parent_class
-                    )
-                  )?
-                )
-                """
-
-                for query_str, query_type in [
-                    (import_query, "import"),
-                    (require_query, "require"),
-                    (class_query, "class")
-                ]:
-                    try:
-                        query = language.query(query_str)
-                        for match in query.matches(root_node):
-                            captures = tree_sitter_match_captures(query, match)
-                            self._process_js_captures(captures, query_type, file_id, edges, content)
-                    except Exception as e:
-                        logger.debug(f"Tree-sitter query failed for {query_type}: {e}")
+            for query_str, query_type in [
+                (import_query, "import"),
+                (require_query, "require"),
+                (class_query, "class")
+            ]:
+                try:
+                    query = Query(language, query_str)
+                    for match in QueryCursor(query).matches(root_node):
+                        captures = tree_sitter_match_captures(match)
+                        self._process_js_captures(captures, query_type, file_id, edges, analysis)
+                except Exception as e:
+                    logger.warning(f"Tree-sitter query failed for {query_type}: {e}")
 
             # Fallback to regex for basic import detection
             if not edges:
@@ -1254,7 +1250,7 @@ class GraphBuilder:
         return edges
 
     def _process_js_captures(self, captures: Dict[str, Any], query_type: str,
-                           file_id: str, edges: List[GraphEdge], content: str) -> None:
+                           file_id: str, edges: List[GraphEdge], analysis: _JavaScriptAnalysis) -> None:
         """Process tree-sitter captures for JavaScript/TypeScript."""
         if query_type == "import" and "source" in captures:
             source = captures["source"].text.decode("utf-8").strip('"\'')
@@ -1276,11 +1272,15 @@ class GraphBuilder:
         elif query_type == "class" and "class_name" in captures:
             if "parent_class" in captures:
                 parent_name = captures["parent_class"].text.decode("utf-8")
+                owner = captures["class_name"].parent.start_byte
+                definition = analysis.class_scopes[owner].lookup(parent_name)
                 edges.append(GraphEdge(
                     source=file_id,
                     target=f"class::{parent_name}",
                     type="inherits",
-                    metadata={"line": captures["class_name"].start_point[0] + 1}
+                    metadata={"line": captures["class_name"].start_point[0] + 1,
+                              "owner": owner, "definition": definition.start_byte
+                              if definition and definition.type in analysis.class_types else None}
                 ))
 
     def _extract_js_regex_fallback(self, content: str, file_id: str, edges: List[GraphEdge]) -> None:

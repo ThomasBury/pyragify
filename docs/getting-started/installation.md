@@ -4,7 +4,7 @@ This guide will help you install Pyragify on your system.
 
 ## Prerequisites
 
-- **Python**: Version 3.9 or higher (up to 3.12)
+- **Python**: Version 3.12 only (`>=3.12,<3.13`)
 - **Operating System**: Linux, macOS, or Windows
 
 ## Installation Methods
@@ -45,7 +45,7 @@ git clone https://github.com/ThomasBury/pyragify.git
 cd pyragify
 
 # Install with uv (recommended)
-uv pip install -e .
+uv sync --locked --group dev --group docs
 
 # Or with pip
 pip install -e .
@@ -77,8 +77,10 @@ Commands:
 
 ## Parser Dependencies
 
-Tree-sitter and its bundled grammars are installed with Pyragify. The package
-constrains them to compatible versions; do not upgrade the parser independently.
+Official Tree-sitter Python bindings and eight individual grammar packages
+(JavaScript, TypeScript, Java, C, C++, Go, HTML, and CSS) are required dependencies,
+installed with Pyragify at pinned versions. Do not upgrade them independently.
+Python analysis continues to use the standard-library `ast` module.
 
 For a source checkout containing `pyproject.toml` and `uv.lock`, install the
 locked dependencies from the checkout root:
@@ -94,7 +96,7 @@ This command is for repository development, not for a standalone pip installatio
 From the root of a source checkout:
 
 ```bash
-uv sync --group dev --group docs
+uv sync --locked --group dev --group docs
 ```
 
 ## Troubleshooting
@@ -115,11 +117,11 @@ uv pip install pyragify
 
 #### Python Version Issues
 
-Ensure you're using Python 3.9+:
+Ensure you're using Python 3.12:
 
 ```bash
 python --version
-# Should show Python 3.9.x or higher
+# Should show Python 3.12.x
 ```
 
 #### Virtual Environment Issues

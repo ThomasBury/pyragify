@@ -4,6 +4,28 @@ The optional graph records file nodes, extracted symbols, and relationships.
 It is experimental: its structural checks do not prove that all relationships
 are correct, and graph data is separate from the readable source chunks.
 
+## Parser runtime
+
+Pyragify requires Python 3.12 (`>=3.12,<3.13`). Official Tree-sitter 0.26.1
+bindings and individually pinned grammars are installed with the package for
+JavaScript, TypeScript, Java, C, C++, Go, HTML, and CSS. Each analysis gets a fresh
+native parser. Python analysis uses the standard-library `ast` module. HTML and
+CSS graph chunks still use the existing regex extraction after parsing.
+
+JavaScript and TypeScript inheritance queries follow their separate grammar
+shapes and identify subclasses by byte position, including classes sharing a line.
+Superclass targets resolve only to unambiguous lexical class bindings; shadowed
+or reassigned names remain unresolved.
+C++ class queries run only for C++ files. Dependency query failures are
+logged as warnings. Syntax errors and extraction failures can leave an incomplete
+graph, while the source export retains the complete file.
+
+Cache version 10 rebuilds records written by version 9 or earlier on the next
+export. CLI options, configuration, and the graph JSON schema are unchanged.
+Grammar upgrades can change extracted relationships. Syntax support is bounded
+by each pinned grammar, especially TypeScript; JavaScript resource-declaration
+support does not imply TypeScript support.
+
 ## Build and query
 
 ```bash
@@ -84,6 +106,9 @@ Direct identifier calls resolve only an unambiguous lexical function declaration
 or direct variable-bound arrow in the same file. Parameters, destructuring,
 imports, local declarations, and writes block unrelated same-named definitions.
 Block bindings stay within their blocks; `var` bindings belong to the function.
+JavaScript `using` and `await using` declarations also bind within their block.
+Their initializer calls keep the containing execution owner; resource names
+shadow outer functions without hiding valid outer calls after the block.
 Repeated declarations and reassigned values remain unresolved. Aliases,
 assignment-bound or object-property arrows, member calls, and JavaScript module
 calls are not resolved. TypeScript namespaces isolate bindings, but namespace

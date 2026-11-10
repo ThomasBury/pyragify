@@ -1,6 +1,36 @@
-import pytest
 from pathlib import Path
+
+import pytest
+from tree_sitter import Language, Parser, Query, QueryCursor
+
+from pyragify.graph import get_tree_sitter_language_and_parser
 from pyragify.processor import FileProcessor, compute_file_hash, save_json, load_json, is_documentation_file, read_file_in_chunks
+
+
+@pytest.mark.parametrize("language, source, expression, expected", [
+    ("javascript", "function first() {} function second() {}",
+     "(function_declaration name: (identifier) @name)", [b"first", b"second"]),
+    ("typescript", "function run(x: number): number { return x; }",
+     "(function_declaration name: (identifier) @name)", [b"run"]),
+    ("java", "class A {} class B extends A {}",
+     "(class_declaration name: (identifier) @name)", [b"A", b"B"]),
+    ("c", "int run() { return 1; }", "(function_definition) @definition",
+     [b"int run() { return 1; }"]),
+    ("cpp", "class A {};", "(class_specifier name: (type_identifier) @name)", [b"A"]),
+    ("go", "package main\nfunc run() {}", "(function_declaration name: (identifier) @name)", [b"run"]),
+    ("html", "<script>run()</script>", "(script_element (raw_text) @body)", [b"run()"]),
+    ("css", "a { color: red; }", "(declaration) @body", [b"color: red;"]),
+])
+def test_native_grammar_loading(language, source, expression, expected):
+    grammar, parser = get_tree_sitter_language_and_parser(language)
+    assert isinstance(grammar, Language)
+    assert isinstance(parser, Parser)
+    assert get_tree_sitter_language_and_parser(language)[1] is not parser
+    root = parser.parse(source.encode()).root_node
+    assert not root.has_error
+    matches = QueryCursor(Query(grammar, expression)).matches(root)
+    assert [node.text for _, captures in matches for nodes in captures.values() for node in nodes] == expected
+
 
 @pytest.fixture
 def sample_python_file(tmp_path):
