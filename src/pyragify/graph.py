@@ -552,7 +552,7 @@ class _JavaScriptAnalysis:
                     binding_scope = binding_scope.parent
             value = node.child_by_field_name("value")
             self._bind(node.child_by_field_name("name"), binding_scope,
-                       value if value and value.type == "arrow_function" else None)
+                       value if value and value.type in {"arrow_function", "class"} else None)
         elif node.type in {"internal_module", "module"}:
             self._bind(node.child_by_field_name("name"), scope)
             scope = _JavaScriptScope(scope, function=True)

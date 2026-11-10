@@ -131,6 +131,27 @@ def test_superclasses_resolve_to_lexical_class_definitions(tmp_path, suffix):
         (file + '::Sibling', file + '::Base')}
 
 
+@pytest.mark.parametrize('suffix', ['.js', '.ts'])
+@pytest.mark.parametrize('initializer, target', [
+    ('class Base {}', 'Base'),
+    ('class Inner {}', 'Inner'),
+    ('class {}', 'anonymous@1:13'),
+])
+def test_variable_bound_class_initializers_resolve_as_superclasses(tmp_path, suffix, initializer, target):
+    file = 'app' + suffix
+    graph = build(tmp_path, suffix, f'const Base = {initializer}; class Child extends Base {{}}')
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'} == {
+        (file + '::Child', file + '::' + target)}
+
+
+@pytest.mark.parametrize('suffix', ['.js', '.ts'])
+def test_reassigned_class_initializers_stay_unresolved(tmp_path, suffix):
+    graph = build(tmp_path, suffix,
+                  'let Base = class Base {}; Base = other; class Child extends Base {}')
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'} == {
+        ('app' + suffix + '::Child', 'class::Base')}
+
+
 def test_typescript_arrow_annotations_and_parameters(tmp_path):
     graph = build(tmp_path, '.ts', 'function leaf(): number { return 1; }\nconst run = async (x: number): Promise<number> => leaf();\nconst caller = (run: () => number) => run();\nrun(1);\n')
     assert calls(graph) == {('app.ts::run', 'app.ts::leaf'), ('app.ts::caller', 'function::run'),
