@@ -18,8 +18,16 @@ uvx library-skills install --skill pyragify-export --skill pyragify-graph
 
 Until then, install the wheel attached to the
 [0.5.0 GitHub release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
-with `uv add --dev /path/to/pyragify-0.5.0-py3-none-any.whl`, then run the same
-Library Skills command.
+using its portable release URL, then run the same Library Skills command:
+
+```bash
+uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
+```
+
+These commands assume the project's declared `requires-python` range is
+`>=3.12,<3.13`. If the project supports other Python versions too, add
+`--marker 'python_version == "3.12"'` to either `uv add` command and use a
+Python 3.12 environment. See the [Python range guidance](docs/getting-started/installation.md#agent-skills).
 
 [Library Skills](https://library-skills.io/reference/) scans the project's
 environment; a global or isolated Pyragify CLI installation alone is insufficient.

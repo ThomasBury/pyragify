@@ -17,6 +17,7 @@ NAMES = ("pyragify-export", "pyragify-graph")
 
 @pytest.mark.parametrize("name", NAMES)
 def test_skill_frontmatter(name):
+    """Each shipped skill declares its directory name and a useful description."""
     path = SKILLS.joinpath(name, "SKILL.md")
     content = path.read_text(encoding="utf-8")
     assert content.startswith("---\n")
@@ -29,6 +30,7 @@ def test_skill_frontmatter(name):
 
 @pytest.mark.parametrize("name", NAMES)
 def test_skill_commands_export_and_query(tmp_path, monkeypatch, name):
+    """Run the documented commands and check bytes, exclusions, and a known call."""
     monkeypatch.chdir(tmp_path)
     repo = tmp_path / "my-project"
     repo.mkdir()
@@ -38,7 +40,9 @@ def test_skill_commands_export_and_query(tmp_path, monkeypatch, name):
     (repo / "helper.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
     (repo / ".env").write_text("EXCLUDED=private\n", encoding="utf-8")
     skill = SKILLS.joinpath(name, "SKILL.md").read_text(encoding="utf-8")
-    config = re.search(r"```yaml\n(.*?)```", skill, re.DOTALL).group(1)
+    match = re.search(r"```yaml\n(.*?)```", skill, re.DOTALL)
+    assert match, f"{name}: SKILL.md has no yaml block"
+    config = match.group(1)
     (tmp_path / f"{name}.yaml").write_text(config, encoding="utf-8")
     results = {}
     for block in re.findall(r"```bash\n(.*?)```", skill, re.DOTALL):

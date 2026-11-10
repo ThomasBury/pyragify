@@ -66,9 +66,19 @@ uvx library-skills scan --json
 ```
 
 PyPI publication is separate from the GitHub release. Until the package is on
-your index, download the wheel from the
-[0.5.0 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
-and use `uv add --dev /path/to/pyragify-0.5.0-py3-none-any.whl` instead.
+your index, use the [0.5.0 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
+wheel URL so other developers and CI can sync the same dependency:
+
+```bash
+uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
+```
+
+Both commands assume the consuming project's declared `requires-python` is
+`>=3.12,<3.13`. uv resolves against that entire range, not just the interpreter
+currently running. If your project supports other Python versions, add
+`--marker 'python_version == "3.12"'` to either `uv add` command to limit this
+development dependency to Python 3.12. Run exports and skill installation from
+the Python 3.12 environment. See [uv's resolution rules](https://docs.astral.sh/uv/concepts/resolution/).
 
 [Library Skills](https://library-skills.io/create/) discovers skills inside
 installed library packages. It scans the project's environment, so a global
@@ -96,9 +106,13 @@ To use a source checkout containing these skills:
 git clone https://github.com/ThomasBury/pyragify.git
 cd pyragify
 uv sync --locked
-uvx library-skills scan --json
+uvx library-skills scan --all --json
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
 ```
+
+`--all` includes the checkout package itself, which is not one of its own
+declared dependencies. In a consuming project, the default scan includes
+Pyragify because it is a declared dependency.
 
 The local packaging check uses Library Skills `0.0.19` against isolated wheel,
 editable, and source-distribution installations:

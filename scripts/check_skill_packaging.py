@@ -24,6 +24,7 @@ SELECT = [arg for name in NAMES for arg in ("--skill", name)]
 
 
 def run(*args, cwd):
+    """Run a CLI without inheriting the checkout's environment selection."""
     # Consumer discovery must not inherit the checkout's activated environment.
     env = {key: value for key, value in os.environ.items()
            if key not in {"VIRTUAL_ENV", "PYTHONPATH", "UV_PROJECT", "UV_WORKING_DIRECTORY",
@@ -35,6 +36,7 @@ def run(*args, cwd):
 
 
 def check_archive(path, expected):
+    """Require complete, byte-identical skill files in each release archive."""
     if path.suffix == ".whl":
         with zipfile.ZipFile(path) as archive:
             actual = {name: archive.read(name) for name in archive.namelist()
@@ -50,6 +52,7 @@ def check_archive(path, expected):
 
 
 def exercise_skills(consumer):
+    """Execute installed instructions and verify source retention and graph queries."""
     repo = consumer / "my-project"
     repo.mkdir()
     (repo / "app.py").write_bytes(
@@ -59,7 +62,9 @@ def exercise_skills(consumer):
     results = {}
     for name in NAMES:
         skill = (consumer / ".agents/skills" / name / "SKILL.md").read_text(encoding="utf-8")
-        config = re.search(r"```yaml\n(.*?)```", skill, re.DOTALL).group(1)
+        match = re.search(r"```yaml\n(.*?)```", skill, re.DOTALL)
+        assert match, f"{name}: SKILL.md has no yaml block"
+        config = match.group(1)
         (consumer / f"{name}.yaml").write_text(config, encoding="utf-8")
         for block in re.findall(r"```bash\n(.*?)```", skill, re.DOTALL):
             for line in block.splitlines():
@@ -91,6 +96,7 @@ def exercise_skills(consumer):
 
 
 def check_consumer(consumer, package, version, expected, *, editable=False):
+    """Check discovery, symlinks, repeat installs, Claude targets, and copies."""
     consumer.mkdir()
     # A workspace boundary keeps unrelated parent projects out of discovery.
     (consumer / "pyproject.toml").write_text(
@@ -108,9 +114,10 @@ def check_consumer(consumer, package, version, expected, *, editable=False):
         for item in skills.values():
             assert Path(item["path"]).is_relative_to(consumer / ".venv"), item
 
+    # Install twice to check repeated installation, then add Claude targets.
     for options in ([], [], ["--claude"]):
         run(*LIBRARY_SKILLS, "install", *SELECT, *options, "--yes", cwd=consumer)
-        for target in (".agents", ".claude") if options else (".agents",):
+        for target in (".agents", ".claude") if "--claude" in options else (".agents",):
             for name in NAMES:
                 link = consumer / target / "skills" / name
                 assert link.is_symlink() and not Path(os.readlink(link)).is_absolute(), link
@@ -130,7 +137,11 @@ def check_consumer(consumer, package, version, expected, *, editable=False):
 
 
 def main():
+    """Check checkout discovery and test all supported local package sources."""
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    checkout = json.loads(run(*LIBRARY_SKILLS, "scan", "--all", "--json", cwd=ROOT))
+    assert {item["name"]: item["version"] for item in checkout["skills"]
+            if item["package"] == "pyragify"} == dict.fromkeys(NAMES, version), checkout
     expected = {f".agents/skills/{name}/SKILL.md":
                 (ROOT / "src/pyragify/.agents/skills" / name / "SKILL.md").read_bytes()
                 for name in NAMES}
