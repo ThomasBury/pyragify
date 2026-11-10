@@ -73,12 +73,27 @@ wheel URL so other developers and CI can sync the same dependency:
 uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
 ```
 
+uv records that wheel URL under `[tool.uv.sources]`, so normal upgrades keep
+using the same wheel. After 0.5.0 or later is available on your package index,
+remove only the `pyragify` entry from `[tool.uv.sources]` in `pyproject.toml`, then
+run `uv lock --upgrade-package pyragify` and `uv sync --python 3.12` to resolve
+and install from the index.
+
 Both commands assume the consuming project's declared `requires-python` is
 `>=3.12,<3.13`. uv resolves against that entire range, not just the interpreter
 currently running. If your project supports other Python versions, add
 `--marker 'python_version == "3.12"'` to either `uv add` command to limit this
-development dependency to Python 3.12. Run exports and skill installation from
-the Python 3.12 environment. See [uv's resolution rules](https://docs.astral.sh/uv/concepts/resolution/).
+development dependency to Python 3.12. The marker does not select an interpreter.
+Before adding the dependency, select Python 3.12 for the project environment:
+
+```bash
+uv python pin 3.12
+uv sync --python 3.12
+```
+
+Then run the chosen `uv add` command with the marker. Use `uv run pyragify` for
+exports; `uvx library-skills` scans the project's now-synced `.venv`. See
+[uv's resolution rules](https://docs.astral.sh/uv/concepts/resolution/).
 
 [Library Skills](https://library-skills.io/create/) discovers skills inside
 installed library packages. It scans the project's environment, so a global

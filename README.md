@@ -27,7 +27,10 @@ uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyra
 These commands assume the project's declared `requires-python` range is
 `>=3.12,<3.13`. If the project supports other Python versions too, add
 `--marker 'python_version == "3.12"'` to either `uv add` command and use a
-Python 3.12 environment. See the [Python range guidance](docs/getting-started/installation.md#agent-skills).
+Python 3.12 environment. The marker does not select Python: run
+`uv python pin 3.12` and `uv sync --python 3.12` before adding the dependency.
+The wheel URL pins its version; see the [installation guide](docs/getting-started/installation.md#agent-skills)
+for switching to the package index after publication.
 
 [Library Skills](https://library-skills.io/reference/) scans the project's
 environment; a global or isolated Pyragify CLI installation alone is insufficient.
