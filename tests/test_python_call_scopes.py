@@ -1,5 +1,4 @@
 import json
-import sys
 
 import pytest
 
@@ -199,7 +198,6 @@ def test_comprehension_walrus_binds_in_the_containing_scope(tmp_path):
     assert calls(graph) == {("app.py::caller", "function::run")}
 
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="Pattern matching requires Python 3.10")
 @pytest.mark.parametrize("pattern", ["run", "{'key': run}", "[*run]", "{'key': value, **run}"])
 def test_pattern_captures_shadow_definitions(tmp_path, pattern):
     graph = build(tmp_path, f"def run(): pass\ndef caller(value):\n    match value:\n        case {pattern}:\n            run()\n")

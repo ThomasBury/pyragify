@@ -191,7 +191,10 @@ def environment():
             'cpu_count': os.cpu_count(),
             'cpu_affinity': sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else None,
             'dependencies': {name: importlib.metadata.version(name) for name in
-                             ('pyragify', 'tree-sitter', 'tree-sitter-languages', 'pathspec')}}
+                             ('pyragify', 'tree-sitter', 'tree-sitter-javascript',
+                              'tree-sitter-typescript', 'tree-sitter-java', 'tree-sitter-c',
+                              'tree-sitter-cpp', 'tree-sitter-go', 'tree-sitter-html',
+                              'tree-sitter-css', 'pathspec')}}
 
 
 def main():

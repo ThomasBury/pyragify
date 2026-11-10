@@ -23,18 +23,11 @@ from pyragify.graph import (
     GraphBuilder,
     _JavaScriptAnalysis,
     KnowledgeGraph,
-    TREE_SITTER_AVAILABLE,
     get_tree_sitter_language_and_parser,
     tree_sitter_match_captures,
 )
 
-# Tree-sitter imports (conditionally imported for type hinting)
-try:
-    from tree_sitter import Language, Node
-except ImportError:
-    # Define dummy types for type hinting if tree-sitter is not available
-    class Language: pass
-    class Node: pass
+from tree_sitter import Language, Node, Query, QueryCursor
 
 
 # Configure logging
@@ -145,7 +138,7 @@ DEFAULT_SKIP_PATTERNS = [
     "*.svg",
 ]
 
-CACHE_VERSION = 8
+CACHE_VERSION = 10
 CACHE_FILENAME = ".pyragify-cache.json"
 MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
 
@@ -629,9 +622,9 @@ class FileProcessor:
         """
         chunks = []
         try:
-            query = language.query(query_str)
-            for match in query.matches(root_node):
-                match_captures = tree_sitter_match_captures(query, match)
+            query = Query(language, query_str)
+            for match in QueryCursor(query).matches(root_node):
+                match_captures = tree_sitter_match_captures(match)
 
                 name_node = match_captures.get('name')
                 name = name_node.text.decode('utf8') if name_node else "anonymous"
@@ -682,56 +675,55 @@ class FileProcessor:
             chunks = []
 
             # Try tree-sitter parsing first
-            if TREE_SITTER_AVAILABLE:
-                try:
-                    language, parser = get_tree_sitter_language_and_parser(lang_name)
-                    tree = parser.parse(bytes(source, "utf8"))
-                    root_node = tree.root_node
-                    if root_node.has_error:
-                        self.parser_limitations.append(f"Tree-sitter {lang_name} syntax errors; graph extraction may be incomplete.")
+            try:
+                language, parser = get_tree_sitter_language_and_parser(lang_name)
+                tree = parser.parse(bytes(source, "utf8"))
+                root_node = tree.root_node
+                if root_node.has_error:
+                    self.parser_limitations.append(f"Tree-sitter {lang_name} syntax errors; graph extraction may be incomplete.")
 
-                    if lang_name in ["javascript", "typescript"]:
-                        chunks.extend(_JavaScriptAnalysis(root_node).chunks)
+                if lang_name in ["javascript", "typescript"]:
+                    chunks.extend(_JavaScriptAnalysis(root_node).chunks)
 
-                    elif lang_name == "java":
-                        chunks.extend(self._query_tree_sitter(language, root_node, source,
-                            "(method_declaration name: (identifier) @name) @method_declaration", "java_method"))
-                        chunks.extend(self._query_tree_sitter(language, root_node, source,
-                            "(class_declaration name: (identifier) @name) @class_declaration", "java_class"))
+                elif lang_name == "java":
+                    chunks.extend(self._query_tree_sitter(language, root_node, source,
+                        "(method_declaration name: (identifier) @name) @method_declaration", "java_method"))
+                    chunks.extend(self._query_tree_sitter(language, root_node, source,
+                        "(class_declaration name: (identifier) @name) @class_declaration", "java_class"))
 
-                    elif lang_name in ["cpp", "c"]:
+                elif lang_name in ["cpp", "c"]:
+                    chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                    (function_definition
+                      declarator: (function_declarator
+                        declarator: (identifier) @name
+                      )
+                    ) @function_definition
+                    ''', "cpp_function"))
+
+                    # Struct/Class for C++
+                    if lang_name == "cpp":
                         chunks.extend(self._query_tree_sitter(language, root_node, source, '''
-                        (function_definition
-                          declarator: (function_declarator
-                            declarator: (identifier) @name
-                          )
-                        ) @function_definition
-                        ''', "cpp_function"))
-
-                        # Struct/Class for C++
-                        if lang_name == "cpp":
-                            chunks.extend(self._query_tree_sitter(language, root_node, source, '''
-                                (struct_specifier name: (type_identifier) @name) @struct_specifier
-                            ''', "cpp_struct"))
-                            chunks.extend(self._query_tree_sitter(language, root_node, source, '''
-                                (class_specifier name: (type_identifier) @name) @class_specifier
-                            ''', "cpp_class"))
-                    
-                    elif lang_name == "go":
+                            (struct_specifier name: (type_identifier) @name) @struct_specifier
+                        ''', "cpp_struct"))
                         chunks.extend(self._query_tree_sitter(language, root_node, source, '''
-                            (function_declaration
-                              name: (identifier) @name
-                            ) @function_declaration
-                        ''', "go_function"))
-                        chunks.extend(self._query_tree_sitter(language, root_node, source, '''
-                            (type_declaration
-                              (type_spec name: (type_identifier) @name)
-                            ) @type
-                        ''', "go_type"))
+                            (class_specifier name: (type_identifier) @name) @class_specifier
+                        ''', "cpp_class"))
 
-                except Exception as e:
-                    self.parser_limitations.append(f"Tree-sitter {lang_name} graph extraction failed: {e}")
-                    logger.warning(f"Tree-sitter parsing failed for {lang_name}: {e}")
+                elif lang_name == "go":
+                    chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                        (function_declaration
+                          name: (identifier) @name
+                        ) @function_declaration
+                    ''', "go_function"))
+                    chunks.extend(self._query_tree_sitter(language, root_node, source, '''
+                        (type_declaration
+                          (type_spec name: (type_identifier) @name)
+                        ) @type
+                    ''', "go_type"))
+
+            except Exception as e:
+                self.parser_limitations.append(f"Tree-sitter {lang_name} graph extraction failed: {e}")
+                logger.warning(f"Tree-sitter parsing failed for {lang_name}: {e}")
 
             # Fallback to regex for HTML/CSS or if tree-sitter failed
             if not chunks:

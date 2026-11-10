@@ -24,6 +24,7 @@ HTML/CSS extraction. These can omit symbols and relationships. The manifest
 reports that limitation when graphs are enabled. A failed parser cannot remove
 source from the readable handoff.
 
-Tree-sitter and its bundled grammars must remain compatible. Repository
+Official Tree-sitter bindings and the eight individual grammar packages are
+installed at pinned compatible versions on Python 3.12. Repository
 development uses `uv sync --locked`; do not upgrade the parser independently of
 the declared dependency constraints. See the [graph guide](knowledge-graph.md).

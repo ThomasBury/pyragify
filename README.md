@@ -55,4 +55,4 @@ uv run --locked --group docs mkdocs build
 See the [quick start](docs/getting-started/quick-start.md),
 [CLI reference](docs/user-guide/cli-reference.md),
 [contribution guide](docs/contributing.md), and [implementation plan](PLAN.md).
-Python 3.9–3.12 is supported. Licensed under the [Unlicense](LICENSE).
+Python 3.12 is required (>=3.12,<3.13). Licensed under the [Unlicense](LICENSE).

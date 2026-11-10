@@ -1,6 +1,6 @@
 import pytest
 
-from pyragify.graph import GraphBuilder, GraphQuery
+from pyragify.graph import GraphBuilder, GraphQuery, KnowledgeGraph
 from pyragify.processor import FileProcessor, is_probably_binary_file
 
 
@@ -184,3 +184,86 @@ def test_reverse_context_retains_traversed_relationship(tmp_path, relationship):
     assert related[0].node.id == "source"
     assert related[0].relationship_path == [relationship]
     assert GraphQuery(graph).find_related_context("target", 1, []) == []
+
+
+@pytest.mark.parametrize("suffix", [".js", ".ts"])
+@pytest.mark.parametrize("separator", ["\r\n", " "])
+def test_native_javascript_imports_and_inheritance(tmp_path, monkeypatch, caplog, suffix, separator):
+    monkeypatch.setattr(GraphBuilder, '_extract_js_regex_fallback',
+                        lambda *args: pytest.fail('Valid source must use the parser'))
+    source = ('// café 🐍\r\nimport value from "./first";\r\n'
+              'const other = require("./second");\r\n'
+              + separator.join(['class Base {}', 'class First extends Base {}', 'class Second extends Base {}']))
+    graph = build(tmp_path, 'app' + suffix, source)
+    inherits = {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'}
+    assert inherits == {('app' + suffix + '::First', 'app' + suffix + '::Base'),
+                        ('app' + suffix + '::Second', 'app' + suffix + '::Base')}
+    assert {edge.target for edge in graph.edges if edge.type == 'imports'} == {
+        'module::./first', 'module::./second'}
+    assert not caplog.records
+    loaded = KnowledgeGraph.from_dict(graph.to_dict())
+    assert loaded.to_dict() == graph.to_dict()
+    assert {item.node.id for item in GraphQuery(loaded).find_related_context(
+        'app' + suffix + '::First', 1, ['inherits'])} == {'app' + suffix + '::Base'}
+
+
+def test_native_java_imports_calls_and_optional_inheritance(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(GraphBuilder, '_extract_java_regex_fallback',
+                        lambda *args: pytest.fail('Valid source must use the parser'))
+    graph = build(tmp_path, 'App.java', '// café 🐍\r\nimport java.util.List;\r\n'
+                  'import java.util.Map;\r\nclass Base {}\r\nclass App extends Base {\r\n'
+                  '  void leaf() {}\r\n  void run() { leaf(); leaf(); }\r\n}\r\nclass Plain {}\r\n')
+    assert {'App.java::Base', 'App.java::App', 'App.java::Plain',
+            'App.java::App.leaf', 'App.java::App.run'} <= graph.nodes.keys()
+    assert {edge.target for edge in graph.edges if edge.type == 'imports'} == {
+        'package::java.util.List', 'package::java.util.Map'}
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'} == {
+        ('App.java::App', 'App.java::Base')}
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'calls'} == {
+        ('App.java::App.run', 'App.java::App.leaf')}
+    assert not caplog.records
+
+
+@pytest.mark.parametrize('suffix', ['.c', '.cpp'])
+def test_native_c_includes_calls_and_cpp_classes(tmp_path, monkeypatch, caplog, suffix):
+    monkeypatch.setattr(GraphBuilder, '_extract_cpp_regex_fallback',
+                        lambda *args: pytest.fail('Valid source must use the parser'))
+    source = ('// café 🐍\r\n#include <stdio.h>\r\n#include "local.h"\r\n'
+              'int leaf() { return 1; }\r\nint run() { return leaf(); }\r\nstruct Data { int value; };\r\n')
+    if suffix == '.cpp':
+        source += 'class Item {};\r\n'
+    file = 'app' + suffix
+    graph = build(tmp_path, file, source)
+    assert {file + '::leaf', file + '::run'} <= graph.nodes.keys()
+    assert {edge.target for edge in graph.edges if edge.type == 'includes'} == {
+        'header::stdio.h', 'header::local.h'}
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'calls'} == {
+        (file + '::run', file + '::leaf')}
+    if suffix == '.cpp':
+        assert graph.nodes[file + '::Item'].type == 'cpp_class'
+        assert graph.nodes[file + '::Data'].type == 'cpp_struct'
+    assert not caplog.records
+
+
+def test_native_go_symbols(tmp_path):
+    graph = build(tmp_path, 'app.go', 'package main\r\n// café 🐍\r\n'
+                  'type Item struct { value int }\r\nfunc first() {}\r\nfunc second() {}\r\n')
+    assert {node.name: node.type for node in graph.nodes.values() if node.type != 'file'} == {
+        'Item': 'go_type', 'first': 'go_function', 'second': 'go_function'}
+
+
+@pytest.mark.parametrize('filename, source', [
+    ('app.js', 'import value from "./other"; class Child extends Base {}'),
+    ('App.java', 'import java.util.List; class App extends Base {}'),
+    ('app.c', '#include <stdio.h>\nint run() { return puts("hi"); }'),
+])
+def test_dependency_query_failures_are_logged(tmp_path, monkeypatch, caplog, filename, source):
+    def fail_query(*args):
+        raise ValueError('injected invalid query')
+    monkeypatch.setattr('pyragify.graph.Query', fail_query)
+    GraphBuilder(tmp_path).extract_dependencies(tmp_path / filename, source,
+                                               {'.js': 'javascript', '.java': 'java', '.c': 'c'}[
+                                                   (tmp_path / filename).suffix])
+    assert 'Tree-sitter query failed' in caplog.text
+    assert 'injected invalid query' in caplog.text
+    assert all(record.levelname == 'WARNING' for record in caplog.records)

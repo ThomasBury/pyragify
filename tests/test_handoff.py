@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from pyragify.cli import app
-from pyragify.processor import RepoContentProcessor
+from pyragify.processor import FileProcessor, RepoContentProcessor
 
 
 def check_handoff(repo, output, max_words=200000):
@@ -43,6 +43,13 @@ def test_complete_source_and_manifest(tmp_path, enable_graph):
         "only_imports.py": "import os\nVALUE = 1\n",
         "broken.py": "async def broken(:\n  # still retained\n",
         "app.js": '// café 🐍\nimport x from "x";\nconst VALUE = 1;\nfunction run() { return VALUE; }\n',
+        "typed.ts": 'const run = (x: number): number => x;\r\nrun(1);\r\n',
+        "App.java": 'class App {\r\n  int run() { return 1; }\r\n}\r\n',
+        "app.c": '#include <stdio.h>\r\nint run() { return puts("café"); }\r\n',
+        "app.cpp": 'class Item {};\r\nint run() { return 1; }\r\n',
+        "app.go": 'package main\r\nfunc run() {}\r\n',
+        "style.css": 'a { color: red; }\r\n',
+        "broken.js": '// café 🐍\r\nfunction broken( {\r\n',
         "page.html": '<h1>Keep me</h1><script>run()</script>\n',
         "README.md": '\n# Heading\n````markdown\n```py\n# Not a heading\n```\n````\n\n',
         "empty.txt": "",
@@ -60,8 +67,31 @@ def test_complete_source_and_manifest(tmp_path, enable_graph):
     if enable_graph:
         broken = next(item for item in manifest["processed_files"] if item["path"] == "broken.py")
         assert any("Python graph extraction failed" in note for note in broken["parser_limitations"])
+        broken_js = next(item for item in manifest["processed_files"] if item["path"] == "broken.js")
+        assert any("syntax errors" in note for note in broken_js["parser_limitations"])
     markdown = (output / "markdown/chunk_0.md").read_text()
     assert "`````markdown" in markdown  # Source fences cannot close the enclosing block.
+
+
+@pytest.mark.parametrize('failure', ['loader', 'query', 'graph'])
+def test_parser_failure_retains_complete_source(tmp_path, monkeypatch, caplog, failure):
+    source = '// café 🐍\r\nclass Item {\r\n  void run() {}\r\n}\r\n'.encode()
+    path = tmp_path / 'App.java'
+    path.write_bytes(source)
+
+    def fail(*args):
+        raise ValueError('injected graph extraction failure')
+
+    target = {'loader': 'pyragify.processor.get_tree_sitter_language_and_parser',
+              'query': 'pyragify.processor.Query',
+              'graph': 'pyragify.graph.GraphBuilder.build_from_chunks'}[failure]
+    monkeypatch.setattr(target, fail)
+    processor = FileProcessor(tmp_path, tmp_path / 'output', enable_graph=True)
+    chunks, line_count, _ = processor.chunk_file(path, True)
+    assert chunks[0]['content'].encode() == source
+    assert line_count == 4
+    assert any('injected graph extraction failure' in note for note in chunks[0]['parser_limitations'])
+    assert 'injected graph extraction failure' in caplog.text
 
 
 @pytest.mark.parametrize("source, expected_lines", [

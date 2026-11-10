@@ -5,6 +5,26 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-11-10
+
+### Changed
+
+- Require Python 3.12 only (`>=3.12,<3.13`), with locked installation in test CI.
+- Replace `tree-sitter-languages` with official Tree-sitter 0.26.1 bindings and
+  individually pinned grammars for JavaScript, TypeScript, Java, C, C++, Go, HTML,
+  and CSS. Python analysis still uses the standard-library `ast` module.
+- Cache version 10 rebuilds records from version 9 and earlier on the next export.
+
+### Fixed
+
+- JavaScript and TypeScript inheritance queries use each grammar's node shapes
+  and parser positions to identify subclasses sharing a source line.
+- JavaScript and TypeScript superclass resolution respects lexical shadowing and
+  leaves uncertain bindings unresolved.
+- C files no longer execute C++ class queries; dependency query failures log warnings.
+- Regression checks cover resource declarations (`using` and `await using`),
+  including initializer ownership, shadowing, and block scope.
+
 ## [0.3.0] — 2026-11-10
 
 ### Added

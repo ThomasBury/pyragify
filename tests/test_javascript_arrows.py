@@ -97,6 +97,61 @@ def test_block_scope_does_not_hide_outer_arrow_after_block(tmp_path, suffix):
     assert calls(graph) == {(file + '::caller', 'function::run'), (file + '::caller', file + '::run')}
 
 
+@pytest.mark.parametrize('suffix', ['.js', '.ts'])
+@pytest.mark.parametrize('source, owner', [
+    ('function make(Base) { class Child extends Base {} }', 'make.Child'),
+    ('const make = (Base) => { class Child extends Base {} };', 'make.Child'),
+    ('function make({Base}) { class Child extends Base {} }', 'make.Child'),
+    ('function make() { class Child extends Base {} let Base; }', 'make.Child'),
+    ('function make() { if (ok) { var Base; } class Child extends Base {} }', 'make.Child'),
+    ('function make() { function Base() {} class Child extends Base {} }', 'make.Child'),
+    ('function make() { try {} catch (Base) { class Child extends Base {} } }', 'make.Child'),
+    ('function make() { for (const Base of xs) { class Child extends Base {} } }', 'make.Child'),
+    ('Base = other; class Child extends Base {}', 'Child'),
+    ('class Base {} class Child extends Base {}', 'Child'),
+])
+def test_shadowed_or_uncertain_superclasses_stay_unresolved(tmp_path, suffix, source, owner):
+    file = 'app' + suffix
+    graph = build(tmp_path, suffix, 'class Base {} ' + source)
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'} == {
+        (file + '::' + owner, 'class::Base')}
+    assert graph.nodes['class::Base'].metadata['external']
+
+
+@pytest.mark.parametrize('suffix', ['.js', '.ts'])
+def test_superclasses_resolve_to_lexical_class_definitions(tmp_path, suffix):
+    file = 'app' + suffix
+    graph = build(tmp_path, suffix, '// café 🐍\r\nclass Base {} '
+                  'function make(Base) { { class Base {} class Inner extends Base {} } } '
+                  'function other() { { class Base {} } class Child extends Base {} } '
+                  '{ let Base; } class Sibling extends Base {}')
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'} == {
+        (file + '::make.Inner', file + '::make.Base'),
+        (file + '::other.Child', file + '::Base'),
+        (file + '::Sibling', file + '::Base')}
+
+
+@pytest.mark.parametrize('suffix', ['.js', '.ts'])
+@pytest.mark.parametrize('initializer, target', [
+    ('class Base {}', 'Base'),
+    ('class Inner {}', 'Inner'),
+    ('class {}', 'anonymous@1:13'),
+])
+def test_variable_bound_class_initializers_resolve_as_superclasses(tmp_path, suffix, initializer, target):
+    file = 'app' + suffix
+    graph = build(tmp_path, suffix, f'const Base = {initializer}; class Child extends Base {{}}')
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'} == {
+        (file + '::Child', file + '::' + target)}
+
+
+@pytest.mark.parametrize('suffix', ['.js', '.ts'])
+def test_reassigned_class_initializers_stay_unresolved(tmp_path, suffix):
+    graph = build(tmp_path, suffix,
+                  'let Base = class Base {}; Base = other; class Child extends Base {}')
+    assert {(edge.source, edge.target) for edge in graph.edges if edge.type == 'inherits'} == {
+        ('app' + suffix + '::Child', 'class::Base')}
+
+
 def test_typescript_arrow_annotations_and_parameters(tmp_path):
     graph = build(tmp_path, '.ts', 'function leaf(): number { return 1; }\nconst run = async (x: number): Promise<number> => leaf();\nconst caller = (run: () => number) => run();\nrun(1);\n')
     assert calls(graph) == {('app.ts::run', 'app.ts::leaf'), ('app.ts::caller', 'function::run'),
@@ -106,8 +161,10 @@ def test_typescript_arrow_annotations_and_parameters(tmp_path):
 def test_arrow_cache_rebuild_and_source_handoff(tmp_path, monkeypatch):
     repo = tmp_path / 'repo'
     repo.mkdir()
-    (repo / 'app.js').write_bytes('// café 🐍\r\nconst leaf = () => 1; const run = () => leaf(); run();\r\n'.encode())
-    (repo / 'typed.ts').write_bytes(b'const run = (x: number): number => x;\r\nrun(1);\r\n')
+    (repo / 'app.js').write_bytes(('// café 🐍\r\nconst leaf = () => 1; const run = () => leaf(); run();\r\n'
+                                 'class Base {} function make(Base) { class Child extends Base {} }\r\n').encode())
+    (repo / 'typed.ts').write_bytes(b'const run = (x: number): number => x;\r\nrun(1);\r\n'
+                                   b'class Base {} class Child extends Base {}\r\n')
     output = tmp_path / 'output'
 
     def export():
@@ -121,13 +178,16 @@ def test_arrow_cache_rebuild_and_source_handoff(tmp_path, monkeypatch):
     original = export()
     assert calls(original) == {('app.js::run', 'app.js::leaf'), ('file::app.js', 'app.js::run'),
                                ('file::typed.ts', 'typed.ts::run')}
+    assert {(edge.source, edge.target) for edge in original.edges if edge.type == 'inherits'} == {
+        ('app.js::make.Child', 'class::Base'),
+        ('typed.ts::Child', 'typed.ts::Base')}
     with monkeypatch.context() as patch:
         patch.setattr('pyragify.processor._process_file_worker', lambda task: pytest.fail('Cache not reused'))
         assert export().to_dict() == original.to_dict()
     path = output / '.pyragify-cache.json'
     cache = json.loads(path.read_text())
-    assert cache['version'] == 8
-    cache['version'] = 7
+    assert cache['version'] == 10
+    cache['version'] = 9
     for record in cache['files'].values():
         record['graph']['edges'] = []
     path.write_text(json.dumps(cache))
@@ -196,3 +256,34 @@ def test_arrow_nested_in_method_keeps_its_execution_owner(tmp_path, suffix):
     assert calls(graph) == {(file + '::A.method.run', file + '::leaf'),
                             (file + '::A.method', file + '::A.method.run'),
                             ('file::' + file, file + '::leaf')}
+
+
+@pytest.mark.parametrize('declaration', ['using', 'await using'])
+def test_resource_bindings_keep_initializer_owner_and_block_scope(tmp_path, declaration):
+    source = ('// café 🐍\r\nfunction run() {}\r\nfunction acquire() {}\r\n'
+              'async function caller() {\r\n'
+              f'  {{ {declaration} run = acquire(); run(); }}\r\n'
+              '  run();\r\n}\r\ncaller();\r\n')
+    path = tmp_path / 'app.js'
+    path.write_bytes(source.encode())
+    processor = FileProcessor(tmp_path, tmp_path / 'output', enable_graph=True)
+    chunks, _, graph = processor.chunk_file(path, True)
+    assert not any('syntax errors' in note for note in processor.parser_limitations)
+    assert chunks[0]['content'].encode() == source.encode()
+    assert calls(graph) == {('app.js::caller', 'app.js::acquire'),
+                            ('app.js::caller', 'function::run'),
+                            ('app.js::caller', 'app.js::run'),
+                            ('file::app.js', 'app.js::caller')}
+    resource_call = next(edge for edge in graph.edges
+                         if edge.type == 'calls' and edge.metadata.get('line') == 5
+                         and edge.target.endswith('run'))
+    assert resource_call.target == 'function::run'
+    assert 'app.js::caller.run' not in graph.nodes
+
+
+@pytest.mark.parametrize('declaration', ['using', 'await using'])
+def test_resource_bindings_shadow_outer_functions_in_entire_scope(tmp_path, declaration):
+    graph = build(tmp_path, '.js', 'function run() {} function acquire() {} '
+                  f'async function caller() {{ run(); {declaration} run = acquire(); run(); }}')
+    assert calls(graph) == {('app.js::caller', 'app.js::acquire'),
+                            ('app.js::caller', 'function::run')}

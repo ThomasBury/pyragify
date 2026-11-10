@@ -31,7 +31,7 @@ We welcome contributions from the community! This guide explains how to get star
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.12 only (`>=3.12,<3.13`)
 - Git
 - uv package manager (recommended) or pip
 
@@ -48,7 +48,7 @@ source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 
 # Install in development mode
-uv sync --active --group dev --group docs
+uv sync --locked --active --group dev --group docs
 
 ```
 
