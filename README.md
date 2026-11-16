@@ -1,96 +1,86 @@
 # Pyragify
 
-Export a local repository as readable Markdown with a JSON manifest that records
-where the source came from and what was excluded. Each selected UTF-8 file is
-retained once, including imports, decorators, comments, whitespace, and Unicode.
+Pyragify exports complete selected source files from a local repository as
+readable Markdown, with a JSON manifest recording source locations and omissions.
+Use the CLI directly or install the bundled skills to work through an agent.
 
-## Agent skills in a consuming project
+[Documentation](https://thomasbury.github.io/pyragify/) ·
+[Installation guide](https://thomasbury.github.io/pyragify/getting-started/installation/) ·
+[Quick start](https://thomasbury.github.io/pyragify/getting-started/quick-start/)
 
-Pyragify 0.5.0 bundles `pyragify-export` for source handoffs and
-`pyragify-graph` for experimental graph exploration. Versions before 0.5.0
-do not include these skills. Once 0.5.0 or later is available on your package
-index, run this in a consuming project using Python 3.12:
+## Use the CLI
+
+Python **3.12** is required (`>=3.12,<3.13`). Install
+[uv](https://docs.astral.sh/uv/getting-started/installation/), then install the
+wheel from the [0.5.1 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.1)
+in a virtual environment:
 
 ```bash
-uv add --dev pyragify
+uv venv --python 3.12 pyragify-env
+source pyragify-env/bin/activate  # Linux/macOS
+# Windows PowerShell: pyragify-env\Scripts\Activate.ps1
+uv pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.1/pyragify-0.5.1-py3-none-any.whl
+```
+
+With the environment activated, replace `./my-project` with your source directory
+and export it to a dedicated output directory:
+
+```bash
+pyragify process-repo --repo-path ./my-project --output-dir ./output --no-enable-graph
+```
+
+## Use an agent
+
+Install Pyragify in the **consuming project's Python 3.12 environment** so
+[Library Skills](https://library-skills.io/reference/) can discover its bundled
+skills. From that project's root, install the wheel and both skills:
+
+```bash
+uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.1/pyragify-0.5.1-py3-none-any.whl
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
+uvx library-skills list --installed
 ```
 
-Until then, install the wheel attached to the
-[0.5.0 GitHub release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
-using its portable release URL, then run the same Library Skills command:
+This example assumes the project's declared `requires-python` range is
+`>=3.12,<3.13` and its environment uses Python 3.12. If prompted for an
+installation target, accept Agents (`.agents/skills`). In an agent that loads
+that directory, try one of these requests:
 
-```bash
-uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
-```
+| Skill | Purpose | Example request |
+| --- | --- | --- |
+| `pyragify-export` | Export complete source and review its manifest. | "Use pyragify-export to export this repository to `./output` without a graph and review the omissions." |
+| `pyragify-graph` | Explore experimental relationships and check them against source. | "Use pyragify-graph to find candidate callers of `hello_world` and verify them against the source." |
 
-These commands assume the project's declared `requires-python` range is
-`>=3.12,<3.13`. If the project supports other Python versions too, add
-`--marker 'python_version == "3.12"'` to either `uv add` command and use a
-Python 3.12 environment. The marker does not select Python: run
-`uv python pin 3.12` and `uv sync --python 3.12` before adding the dependency.
-The wheel URL pins its version; see the [installation guide](docs/getting-started/installation.md#agent-skills)
-for switching to the package index after publication.
+Replace `hello_world` with a function in your repository. See the
+[agent installation guide](https://thomasbury.github.io/pyragify/getting-started/installation/#agent-skills)
+for broader Python compatibility, installation targets, and upgrades.
 
-[Library Skills](https://library-skills.io/reference/) scans the project's
-environment; a global or isolated Pyragify CLI installation alone is insufficient.
-Skills install into `.agents/skills` by default. Add `--claude` to also install
-into `.claude/skills`, or `--copy` where symlinks are unavailable. Symlinked skills
-follow the installed package version; refresh copied skills after upgrades.
-Use `uvx library-skills scan --json` to inspect discovery. See the
-[installation guide](docs/getting-started/installation.md#agent-skills) for the
-source-checkout route available before publication.
+## Understand the output
 
-## Use from a source checkout
+Start at **`output/index.md`**. It links to complete source blocks in
+language-grouped Markdown parts and lists omissions. **`output/metadata.json`**
+records source paths, hashes, line ranges, and exact byte ranges within the parts.
 
-```bash
-uv sync --locked --group dev --group docs
-uv run pyragify process-repo --repo-path ./my-project --output-dir ./output --no-enable-graph
-```
+Each selected UTF-8 file is retained once and whole, including imports,
+decorators, comments, whitespace, and Unicode. Rerun the same command after
+editing your repository: unchanged files reuse the cache, and deleted files
+disappear on the next successful export.
 
-The CLI reads `config.yaml` in the current directory when present; supplied
-options override it. Open `output/index.md` to follow links to complete source
-files and inspect omissions. `output/metadata.json` contains source hashes,
-line ranges, and exact byte ranges within the Markdown parts. Unchanged files
-reuse the versioned cache; deleted files disappear on the next successful run.
+Inspect exports before sharing them; filters do not detect secrets. The
+`max_words` limit counts whitespace-separated words, **not model tokens**, and
+includes Markdown formatting and the index. An oversized file or index fails
+the export instead of being truncated. Increase the limit or narrow the selection.
 
-`max_words` is a positive, hard limit on every generated Markdown file, including
-formatting and the index. Words are whitespace-separated units, not model tokens.
-Files stay whole: an oversized file or index fails the export before publication.
-Raise the limit or deliberately exclude that source file. Read the
-[output contract](docs/user-guide/output-formats.md) and
-[safety and selection rules](docs/getting-started/configuration.md) before sharing.
+The CLI loads `config.yaml` from the current directory when present; explicit
+CLI options override it. Graphs are **optional and experimental**, separate from
+the source handoff. Their relationships can be incomplete or wrong; check them
+against the source before drawing conclusions.
 
-## Why retain a custom exporter?
+## Go further
 
-[The measured Repomix comparison](docs/user-guide/repomix-comparison.md) found that
-Repomix handles ordinary readable packaging well, including Unicode and size
-failures. Pyragify retains a narrow exporter for exact source bytes and the
-hash, part mapping, and omission manifest required by this project. There is no
-Repomix wrapper or runtime dependency.
-
-## Experimental graphs
-
-Graph output is opt-in and outside the trusted source handoff. Its relationships
-can be incomplete or wrong; structural validation does not establish accuracy.
-
-```bash
-uv run pyragify process-repo --repo-path ./my-project --output-dir ./output --enable-graph
-uv run pyragify query-graph --graph-path output/graphs/repository_graph.json --command stats
-```
-
-Source retention does not depend on a parser. No NotebookLM ingestion result,
-LLM answer-quality improvement, or large-repository performance is claimed.
-
-## Development and documentation
-
-```bash
-uv run --locked pytest
-uv run --locked python scripts/check_skill_packaging.py
-uv run --locked --group docs mkdocs build
-```
-
-See the [quick start](docs/getting-started/quick-start.md),
-[CLI reference](docs/user-guide/cli-reference.md),
-[contribution guide](docs/contributing.md), and [implementation plan](PLAN.md).
-Python 3.12 is required (>=3.12,<3.13). Licensed under the [Unlicense](LICENSE).
+- [Configuration and selection rules](https://thomasbury.github.io/pyragify/getting-started/configuration/)
+- [Output contract](https://thomasbury.github.io/pyragify/user-guide/output-formats/)
+- [CLI reference](https://thomasbury.github.io/pyragify/user-guide/cli-reference/)
+- [Graph guide](https://thomasbury.github.io/pyragify/user-guide/knowledge-graph/)
+- [Contributing](https://thomasbury.github.io/pyragify/contributing/)
+- [License: Unlicense](https://github.com/ThomasBury/pyragify/blob/main/LICENSE)
