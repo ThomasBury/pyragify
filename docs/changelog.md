@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retain the Python 3.12 requirement and experimental graph limitations.
   Runtime behavior and dependencies are unchanged.
 
+### Fixed
+
+- Use release wheels and activated Python 3.12 environments in the installation
+  guide, with version constraints for future package-index installs.
+
 ## [0.5.0] — 2026-11-10
 
 ### Added
