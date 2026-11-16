@@ -11,8 +11,8 @@ This guide will help you install Pyragify on your system.
 
 ### Method 1: Release wheel with uv (Recommended)
 
-These docs describe Pyragify 0.5.0. Install its
-[GitHub release wheel](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
+These docs describe Pyragify 0.5.1. Install its
+[GitHub release wheel](https://github.com/ThomasBury/pyragify/releases/tag/0.5.1)
 to get the features documented here. Package-index publication is separate.
 
 [uv](https://docs.astral.sh/uv/pip/environments/) creates virtual environments
@@ -25,15 +25,15 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv --python 3.12 pyragify-env
 source pyragify-env/bin/activate  # Linux/macOS
 # Windows PowerShell: pyragify-env\Scripts\Activate.ps1
-uv pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
+uv pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.1/pyragify-0.5.1-py3-none-any.whl
 pyragify --help
 ```
 
-Once 0.5.0 or later is available on your package index, you can install from
+Once 0.5.1 or later is available on your package index, you can install from
 there in the activated environment:
 
 ```bash
-uv pip install "pyragify>=0.5.0"
+uv pip install "pyragify>=0.5.1"
 ```
 
 The version constraint prevents an older release from silently satisfying the
@@ -44,14 +44,15 @@ installation.
 With Python 3.12 installed:
 
 ```bash
-python3.12 -m venv pyragify-env
+python3.12 -m venv pyragify-env  # Linux/macOS
+# Windows: py -3.12 -m venv pyragify-env
 source pyragify-env/bin/activate  # Linux/macOS
 # Windows PowerShell: pyragify-env\Scripts\Activate.ps1
-python -m pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
+python -m pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.1/pyragify-0.5.1-py3-none-any.whl
 pyragify --help
 ```
 
-Once available on your index, use `python -m pip install "pyragify>=0.5.0"`
+Once available on your index, use `python -m pip install "pyragify>=0.5.1"`
 in the activated environment instead.
 
 ### Method 3: From Source
@@ -72,26 +73,26 @@ pip install -e .
 
 ## Agent skills
 
-Pyragify 0.5.0 bundles two self-contained skills:
+Pyragify 0.5.1 bundles two self-contained skills:
 `pyragify-export` covers source-only exports and manifest inspection;
 `pyragify-graph` covers experimental graph export and queries with source checks.
 Versions before 0.5.0 do not contain them. From a consuming project using
-Python 3.12, install the [0.5.0 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.0)
+Python 3.12, install the [0.5.1 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.1)
 wheel and both skills:
 
 ```bash
-uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.0/pyragify-0.5.0-py3-none-any.whl
+uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.1/pyragify-0.5.1-py3-none-any.whl
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
 uvx library-skills scan --json
 ```
 
-Once 0.5.0 or later is available on your package index, use
-`uv add --dev "pyragify>=0.5.0"` instead of the wheel command.
+Once 0.5.1 or later is available on your package index, use
+`uv add --dev "pyragify>=0.5.1"` instead of the wheel command.
 
 uv records that wheel URL under `[tool.uv.sources]`, so normal upgrades keep
-using the same wheel. After 0.5.0 or later is available on your package index,
+using the same wheel. After 0.5.1 or later is available on your package index,
 remove only the `pyragify` entry from `[tool.uv.sources]` in `pyproject.toml`, then
-run `uv add --dev "pyragify>=0.5.0"`, `uv lock --upgrade-package pyragify`,
+run `uv add --dev "pyragify>=0.5.1"`, `uv lock --upgrade-package pyragify`,
 and `uv sync --python 3.12` to resolve and install from the index.
 
 Both commands assume the consuming project's declared `requires-python` is
