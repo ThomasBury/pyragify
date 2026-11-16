@@ -5,6 +5,20 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-11-16
+
+### Changed
+
+- Make the README the starting point for CLI and agent workflows, with a first
+  source export, skill examples, output guidance, and hosted documentation links.
+- Retain the Python 3.12 requirement and experimental graph limitations.
+  Runtime behavior and dependencies are unchanged.
+
+### Fixed
+
+- Use release wheels and activated Python 3.12 environments in the installation
+  guide, with version constraints for future package-index installs.
+
 ## [0.5.0] — 2026-11-10
 
 ### Added
