@@ -75,10 +75,10 @@ for item in manifest["processed_files"]:
     assert hashlib.md5(source).hexdigest() == item["hash"]
 ```
 
-`hashes.json` repeats source hashes for inspection. `.pyragify-cache.json` version
-5 stores source blocks, metadata, and optional graph records for reuse. Removing
-it forces reprocessing. `.pyragify-artifacts.json` lists owned parts for safe
-cleanup. On upgrade, owned legacy `.txt` parts are removed; unlisted old parts
+`hashes.json` repeats source hashes for inspection. The versioned cache
+`.pyragify-cache.json` stores source blocks, metadata, and optional graph records
+for reuse. Removing it forces reprocessing. `.pyragify-artifacts.json` lists owned
+parts for safe cleanup. On upgrade, owned legacy `.txt` parts are removed; unlisted old parts
 are left for manual inspection. Consumers of the earlier semantic chunks must
 switch to the new manifest and `.md` parts.
 

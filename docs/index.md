@@ -12,6 +12,9 @@ Open `output/index.md`, then inspect the source parts and `metadata.json` before
 sharing them. Ignore rules are not secret detection. Source read failures and
 word-limit violations fail the export before publication.
 
+For agent workflows, [install the bundled skills](getting-started/installation.md#agent-skills)
+and try the [example requests](getting-started/installation.md#use-the-skills).
+
 Start with the [quick start](getting-started/quick-start.md),
 [configuration](getting-started/configuration.md), and
 [output contract](user-guide/output-formats.md). The

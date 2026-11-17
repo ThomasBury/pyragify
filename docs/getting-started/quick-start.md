@@ -1,11 +1,15 @@
 # Quick Start
 
 After [installation](installation.md), choose a source directory and a dedicated
-output directory. From a source checkout:
+output directory. From a consuming project or source checkout:
 
 ```bash
 uv run pyragify process-repo --repo-path ./my-project --output-dir ./output --no-enable-graph
 ```
+
+For a standalone CLI installation, activate its environment and use `pyragify`
+in place of `uv run pyragify` in these examples. To work through an agent, see
+[example skill requests](installation.md#use-the-skills).
 
 The CLI reads `config.yaml` in the current directory by default. Options override
 its values. To save a repeatable configuration:

@@ -782,10 +782,10 @@ class RepoContentProcessor:
         Directory names to skip.
     ignore_patterns : pathspec.PathSpec
         Compiled patterns for ignoring files.
-    current_word_count : int
-        The current word count for the current chunk.
-    content : str
-        The current content being accumulated for a chunk.
+    current_word_counts : collections.defaultdict
+        Current chunk word counts by output subdirectory.
+    content_buffers : collections.defaultdict
+        Content being accumulated by output subdirectory.
     hashes : dict
         Current source file hashes saved for inspection.
     file_counter : collections.defaultdict
@@ -799,12 +799,10 @@ class RepoContentProcessor:
         Load root .dockerignore and configured skip patterns.
     should_skip(file_path)
         Determine if a file or directory should be skipped.
-    save_chunk(chunk, subdir)
-        Save a chunk of content to a file.
+    save_chunk(chunk, subdir, file_path)
+        Buffer a source block and return its output byte mapping.
     save_content(subdir)
         Save the accumulated content to a file.
-    process_file(file_path)
-        Process a single file, chunking and saving its content.
     process_repo()
         Process all files in the repository.
     get_file_type_subdir(file_path)
@@ -1256,20 +1254,21 @@ class RepoContentProcessor:
         -----
         - The file is named `chunk_<counter>.md`, where `<counter>` is an incrementing number for the subdirectory.
         - If the subdirectory does not exist, it is created automatically.
-        - Once the content is saved, the internal buffer (`self.content`) and the current word count (`self.current_word_count`) are reset to prepare for the next chunk.
+        - After saving, `self.content_buffers[subdir]` and `self.current_word_counts[subdir]` are reset for the next chunk.
 
         Examples
         --------
         To save the current content to a subdirectory:
             >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
-            >>> processor.content = "This is some chunked content."
-            >>> processor.current_word_count = 5
-            >>> processor.save_content(Path("python"))
+            >>> subdir = Path("python")
+            >>> processor.content_buffers[subdir] = "This is some chunked content."
+            >>> processor.current_word_counts[subdir] = 5
+            >>> processor.save_content(subdir)
 
         Raises
         ------
         OSError
-            If the file cannot be created or written, an error is logged.
+            If the file cannot be created or written; the error propagates.
         """
 
         if self.content_buffers[subdir]:
