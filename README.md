@@ -1,4 +1,4 @@
-# Pyragify
+![Pyragify — Every file. Clearly organized.](docs/images/pyragify-branding/banner/banner-colored.svg)
 
 Pyragify exports complete selected source files from a local repository as
 readable Markdown, with a JSON manifest recording source locations and omissions.
@@ -69,21 +69,56 @@ Start at **`output/index.md`**. It links to complete source blocks in
 language-grouped Markdown parts and lists omissions. **`output/metadata.json`**
 records source paths, hashes, line ranges, and exact byte ranges within the parts.
 
-Here is an excerpt from an export that includes `hello.py` and skips `*.log`:
+Here is Pyragify exported from its own repository: 58 files, 54,653 words.
+From a checkout with the dev environment installed, reproduce it with:
+
+```bash
+uv run pyragify process-repo --config-file config.yaml
+```
+
+Excerpt from `output/index.md` (file list trimmed):
 
 ```markdown
 ## Files
 
-- [&quot;hello.py&quot;](python/chunk_0.md#source-68656c6c6f2e7079) — lines 1-2; MD5 44641958f3c8eb28b3323cf7400cd0f6
+- [&quot;config.yaml&quot;](other/chunk_0.md#source-636f6e6669672e79616d6c) — lines 1-23; MD5 fc16223aefba5147271532375495161b
+- [&quot;src/pyragify/cli.py&quot;](python/chunk_0.md#source-7372632f70797261676966792f636c692e7079) — lines 1-336; MD5 bf2855526380de07004c865f724646af
+- [&quot;src/pyragify/processor.py&quot;](python/chunk_0.md#source-7372632f70797261676966792f70726f636573736f722e7079) — lines 1-1490; MD5 4649437bc1a141f559a3c3b03d126151
+- [&quot;tests/test_processor.py&quot;](python/chunk_0.md#source-74657374732f746573745f70726f636573736f722e7079) — lines 1-310; MD5 df1596575d7df4647a225514daf1621b
+…
 
 ## Omissions
 
+- &quot;output/&quot;: Generated output directory
 - &quot;.git&quot;: Git repository metadata
-- &quot;debug.log&quot;: Skipped by pattern or size
+- &quot;.venv/&quot;: Git ignore rule (directory entries cover descendants)
+- &quot;dist/&quot;: Git ignore rule (directory entries cover descendants)
+- &quot;chat_code_base.png&quot;: Skipped by pattern or size
+- &quot;uv.lock&quot;: Skipped by pattern or size
+…
 ```
 
-[Reproduce this export](https://thomasbury.github.io/pyragify/getting-started/quick-start/#reproduce-the-example)
-to see the linked source block and its manifest entry.
+Follow the `config.yaml` link to its complete source block in
+`output/other/chunk_0.md`. These selected fields from `output/metadata.json`
+identify the same file:
+
+```json
+{
+    "path": "config.yaml",
+    "hash": "fc16223aefba5147271532375495161b",
+    "output": {
+        "part": "other/chunk_0.md",
+        "start_byte": 4136,
+        "end_byte": 4692
+    }
+}
+```
+
+Bytes `[4136:4692]` of the Markdown part are exactly the bytes of `config.yaml`.
+Hashes and byte ranges are a snapshot of this export; they change when the
+sources change. See [Pyragify on itself](https://thomasbury.github.io/pyragify/getting-started/quick-start/#pyragify-on-itself)
+for the full source block, or the
+[minimal sandboxed example](https://thomasbury.github.io/pyragify/getting-started/quick-start/#reproduce-the-example).
 
 Each selected UTF-8 file is retained once and whole, including imports,
 decorators, comments, whitespace, and Unicode. Rerun the same command after

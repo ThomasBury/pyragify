@@ -1,3 +1,5 @@
+![Pyragify — Every file. Clearly organized.](images/pyragify-branding/banner/banner-colored.svg)
+
 # Pyragify
 
 Pyragify exports local repository source as Markdown with a provenance manifest.

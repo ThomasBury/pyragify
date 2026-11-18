@@ -147,6 +147,10 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# pyragify generated handoffs
+/output/
+/graphs/
+
 # mypy
 .mypy_cache/
 .dmypy.json
