@@ -90,6 +90,8 @@ def test_selection_honors_nested_ignores_and_symlink_boundary(tmp_path, git_repo
 
 def test_plain_directory_does_not_need_git(tmp_path, monkeypatch):
     repo, output = source(tmp_path)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.resolve()))
 
     def unexpected_git(*args, **kwargs):
         pytest.fail("Plain directories should be walked without calling Git")
@@ -123,6 +125,30 @@ def test_git_discovery_from_source_subdirectory(tmp_path, linked):
     processor.process_repo()
     assert [item["path"] for item in processor.metadata["processed_files"]] == ["new.py", "tracked.py"]
     assert any(item["path"] == "ignored.py" for item in processor.metadata["skipped_files"])
+
+
+@pytest.mark.parametrize("contained", [False, True])
+def test_git_discovery_with_explicit_worktree(tmp_path, monkeypatch, contained):
+    repo, output = source(tmp_path)
+    metadata = tmp_path / "metadata"
+    subprocess.run(["git", "init", "-q", "--bare", str(metadata)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(metadata))
+    monkeypatch.setenv("GIT_WORK_TREE", str(repo))
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.resolve()))
+    (metadata / "info/exclude").write_text("excluded.py\n")
+    nested = (repo if contained else tmp_path) / "nested"
+    nested.mkdir()
+    (nested / "included.py").write_text("INCLUDED = True\n")
+    (nested / "excluded.py").write_text("EXCLUDED = True\n")
+    processor = RepoContentProcessor(nested, output)
+    if not contained:
+        with pytest.raises(RuntimeError, match="outside Git worktree"):
+            processor.process_repo()
+        assert not snapshot(output)
+        return
+
+    processor.process_repo()
+    assert [item["path"] for item in processor.metadata["processed_files"]] == ["included.py"]
 
 
 @pytest.mark.parametrize("nested", [False, True])
@@ -297,6 +323,28 @@ def test_symlinked_chunk_cannot_change_external_file(tmp_path, legacy):
     assert snapshot(output) == before
     assert chunk.is_symlink()
     assert external.read_text() == "precious"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Directory junctions require Windows")
+def test_junction_cannot_redirect_legacy_artifact_cleanup(tmp_path):
+    repo, output = source(tmp_path)
+    (repo / "app.py").unlink()
+    output.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    stale = external / "chunk_0.txt"
+    stale.write_bytes(b"untouched")
+    ownership = output / ".pyragify-artifacts.json"
+    original = json.dumps({"chunks": ["python\\chunk_0.txt"]}).encode()
+    ownership.write_bytes(original)
+    junction = output / "python"
+    subprocess.run(["cmd.exe", "/d", "/c", "mklink", "/j", str(junction), str(external)], check=True)
+    assert junction.is_junction()
+
+    with pytest.raises(ValueError, match="junctions are unsafe"):
+        RepoContentProcessor(repo, output).process_repo()
+    assert stale.read_bytes() == b"untouched"
+    assert ownership.read_bytes() == original
 
 
 @pytest.mark.parametrize("cache_kind", ["json", "graph"])

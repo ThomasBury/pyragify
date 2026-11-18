@@ -51,5 +51,8 @@ jobs:
       - name: Install the project
         run: uv sync --locked --python 3.12 --group dev
 
-      - name: Test export and rerun with the process pool
-        run: uv run --locked pytest tests/test_handoff.py::test_export_rerun_removes_owned_legacy_text_parts
+      - name: Test export reruns and junction handling
+        run: >-
+          uv run --locked pytest
+          tests/test_handoff.py::test_export_rerun_removes_owned_legacy_text_parts
+          tests/test_export_safety.py::test_junction_cannot_redirect_legacy_artifact_cleanup

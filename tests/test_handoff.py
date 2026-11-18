@@ -282,7 +282,9 @@ def test_export_rerun_removes_owned_legacy_text_parts(tmp_path, separator):
     stale.write_text("old owned output")
     unrelated = output / "python/chunk_7.txt"
     unrelated.write_text("unowned file")
-    ownership.write_text(json.dumps({"chunks": [f"python{separator}chunk_0.{ext}" for ext in ("md", "txt")]}))
+    ownership.write_text(json.dumps({
+        "chunks": [f"python{separator}{name}" for name in ("chunk_0.md", "chunk_0.txt", "chunk_1.txt")],
+    }))
 
     (repo / "b.py").write_text("VALUE = 2\n")
     RepoContentProcessor(repo, output).process_repo()

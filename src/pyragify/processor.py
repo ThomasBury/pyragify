@@ -833,7 +833,7 @@ class RepoContentProcessor:
         self.content_buffers = defaultdict(str)
         self.hashes = {}
         self.cache_path = self.output_dir / CACHE_FILENAME
-        self._reject_symlinks(self.cache_path)
+        self._reject_output_links(self.cache_path)
         try:
             self.file_cache = load_json(self.cache_path, "File cache")
         except FileNotFoundError:
@@ -919,13 +919,13 @@ class RepoContentProcessor:
         return True
 
     @staticmethod
-    def _reject_symlinks(path: Path) -> None:
-        if any(part.is_symlink() for part in (path, *path.parents)):
-            raise ValueError(f"Symlinked output paths are unsafe: {path}")
+    def _reject_output_links(path: Path) -> None:
+        if any(part.is_symlink() or part.is_junction() for part in (path, *path.parents)):
+            raise ValueError(f"Symlinks and junctions are unsafe in output paths ({path})")
 
     def _validate_output_path(self, path: Path) -> Path:
         path = Path(os.path.abspath(path))
-        self._reject_symlinks(path)
+        self._reject_output_links(path)
         if path == self.repo_path or path in self.repo_path.parents:
             raise ValueError("Output must not equal or contain the source repository")
         return path
@@ -935,9 +935,24 @@ class RepoContentProcessor:
                    for root in (self.output_dir, self.graph_output_dir) if root is not None)
 
     def _discover_files(self):
-        git_root = next((directory for directory in (self.repo_path, *self.repo_path.parents)
-                         if (directory / ".git").exists(follow_symlinks=False)), None)
-        if git_root is not None:
+        ceilings = set()
+        resolve_ceiling = True
+        for entry in os.environ.get("GIT_CEILING_DIRECTORIES", "").split(os.pathsep):
+            if not entry:
+                # Git treats an empty entry as a promise that later paths have no symlinks.
+                resolve_ceiling = False
+            elif (ceiling := Path(entry)).is_absolute():
+                ceilings.add(ceiling.resolve() if resolve_ceiling else Path(os.path.normpath(ceiling)))
+
+        git_root = None
+        for directory in (self.repo_path, *self.repo_path.parents):
+            if directory != self.repo_path and directory in ceilings:
+                break
+            if (directory / ".git").exists(follow_symlinks=False):
+                git_root = directory
+                break
+
+        if git_root is not None or "GIT_DIR" in os.environ:
             def git(*args: str) -> bytes:
                 result = subprocess.run(["git", "-C", str(self.repo_path), *args], capture_output=True)
                 if result.returncode:
@@ -951,10 +966,16 @@ class RepoContentProcessor:
             if platform == "win32":
                 root_name = root_name.removesuffix("\r")
             worktree = Path(root_name)
-            if not worktree.is_absolute() or worktree.resolve() != git_root:
+            if not worktree.is_absolute():
+                raise RuntimeError(f"Git reported an invalid worktree path {root_name!r}")
+            worktree = worktree.resolve()
+            if git_root is not None and worktree != git_root:
                 raise RuntimeError(f"Git reported worktree {worktree} but expected {git_root}")
+            if not self.repo_path.is_relative_to(worktree):
+                raise RuntimeError(f"Source directory {self.repo_path} is outside Git worktree {worktree}")
 
-            self.metadata["skipped_files"].append({"path": ".git", "reason": "Git repository metadata"})
+            if git_root is not None:
+                self.metadata["skipped_files"].append({"path": ".git", "reason": "Git repository metadata"})
             ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
             for name in sorted(set(ignored.split(b"\0")) - {b""}):
                 if self._is_inside_output_dir(self.repo_path / os.fsdecode(name)):
@@ -1004,7 +1025,7 @@ class RepoContentProcessor:
     def _publish_output(self, stage: Path) -> None:
         """Publish prepared artifacts, restoring previous files on a write failure."""
         manifest_path = self.output_dir / ".pyragify-artifacts.json"
-        self._reject_symlinks(manifest_path)
+        self._reject_output_links(manifest_path)
         previous = load_json(manifest_path, "Artifact list") if manifest_path.exists() else {}
         old_chunks = previous.get("chunks", [])
         if isinstance(old_chunks, list):
@@ -1024,7 +1045,7 @@ class RepoContentProcessor:
             replacements[self.graph_output_dir / "repository_graph.json"] = stage / "repository_graph.json"
         destinations = set(replacements) | {self.output_dir / name for name in old_chunks}
         for destination in destinations:
-            self._reject_symlinks(destination)
+            self._reject_output_links(destination)
             if destination.exists() and not destination.is_file():
                 raise ValueError(f"Artifact destination is not a file: {destination}")
         # shortcut: rollback covers raised errors, add a journal before supporting crash recovery.
@@ -1049,7 +1070,7 @@ class RepoContentProcessor:
                     finally:
                         temporary.unlink(missing_ok=True)
                 else:
-                    destination.unlink()
+                    destination.unlink(missing_ok=True)
                 published.append(destination)
         except Exception:
             for destination in reversed(published):
