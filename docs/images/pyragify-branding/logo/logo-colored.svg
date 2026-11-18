@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="280" viewBox="0 0 1000 280" role="img" aria-label="Pyragify Archivist primary logo">
+<title>Pyragify Archivist primary logo</title>
+<rect width="1000" height="280" fill="#2C323A"/>
+<g transform="translate(60.000 44.000) scale(1.2)">
+    <path d="M90 12 L140 37 L90 62 L40 37 Z" fill="#F4F0E8"/>
+    <path d="M40 75 L90 100 L140 75" fill="none" stroke="#F4F0E8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M40 110 L90 136 L140 110" fill="none" stroke="#E76F51" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M26 15 H18 Q10 15 10 26 V55 Q10 66 0 72 Q10 78 10 89 V122 Q10 137 24 137 H26" fill="none" stroke="#F4F0E8" stroke-width="10" stroke-linejoin="round"/>
+        <path d="M154 15 H162 Q170 15 170 26 V55 Q170 66 180 72 Q170 78 170 89 V122 Q170 137 156 137 H154" fill="none" stroke="#F4F0E8" stroke-width="10" stroke-linejoin="round"/></g><text x="318" y="179" fill="#F4F0E8" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="105" font-weight="700" text-anchor="start" letter-spacing="-3">pyragify</text>
+</svg>
