@@ -5,6 +5,19 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] — 2026-11-18
+
+### Added
+
+- Show a real export in the README and use the Quick Start to reproduce it.
+  The example links to a complete source block and records an omitted file and
+  the source hash and byte range.
+
+### Changed
+
+- Use PyPI for CLI and agent setup on Python 3.12, with 0.5.3 as the minimum
+  version in the installation commands.
+
 ## [0.5.3] — 2026-11-18
 
 ### Fixed
