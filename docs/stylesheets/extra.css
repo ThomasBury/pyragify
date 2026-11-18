@@ -2,17 +2,18 @@
    The header stays charcoal in both schemes so the logo tile blends in and
    ivory header text keeps contrast (vermilion is too light for header text).
    Light-mode links use a darkened vermilion (#B04527, ~5:1 on ivory); slate
-   links use a lightened vermilion (#EE9179, ~5.5:1 on charcoal). */
+   links use a lightened vermilion (#EE9179, ~5.5:1 on charcoal).
+   Variables are declared on the scheme selectors, which match <body> just
+   like Material's own palette and load after it; :root values would only be
+   inherited by <body> and lose to the palette's direct declarations. */
 
-:root {
+[data-md-color-scheme="default"] {
   --md-primary-fg-color: #2C323A;
   --md-primary-fg-color--light: #3D4550;
   --md-primary-fg-color--dark: #23282F;
   --md-primary-bg-color: #F4F0E8;
   --md-primary-bg-color--light: rgba(244, 240, 232, 0.7);
-}
 
-[data-md-color-scheme="default"] {
   --md-accent-fg-color: #B04527;
   --md-typeset-a-color: #B04527;
 
@@ -40,6 +41,12 @@
 [data-md-color-scheme="slate"] {
   /* Charcoal hue so Material's derived slate tones match the brand. */
   --md-hue: 214deg;
+
+  --md-primary-fg-color: #2C323A;
+  --md-primary-fg-color--light: #3D4550;
+  --md-primary-fg-color--dark: #23282F;
+  --md-primary-bg-color: #F4F0E8;
+  --md-primary-bg-color--light: rgba(244, 240, 232, 0.7);
 
   --md-accent-fg-color: #EE9179;
   --md-typeset-a-color: #EE9179;
