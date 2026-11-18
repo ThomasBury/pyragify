@@ -134,12 +134,15 @@ def test_damaged_git_worktree_preserves_previous_export(tmp_path, nested):
     if nested:
         subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
         (repo / ".git").mkdir()
-        diagnostic = "Git reported worktree .* but expected"
+        diagnostic = f"Git reported worktree {tmp_path.resolve()} but expected {repo.resolve()}"
     else:
         (repo / ".git").write_text("gitdir: missing-git-dir\n")
-        diagnostic = "missing-git-dir"
-    with pytest.raises(RuntimeError, match=diagnostic):
+        result = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"], capture_output=True)
+        assert result.returncode != 0 and result.stderr
+        diagnostic = os.fsdecode(result.stderr).strip()
+    with pytest.raises(RuntimeError) as error:
         RepoContentProcessor(repo, output).process_repo()
+    assert diagnostic in str(error.value)
     assert snapshot(output) == before
 
 
