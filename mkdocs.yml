@@ -9,21 +9,26 @@ edit_uri: edit/main/docs/
 copyright: Copyright &copy; 2025 Thomas Bury
 
 # Theme
+# Brand palette (charcoal/ivory/vermilion) is applied in stylesheets/extra.css;
+# the palette primary below is only a fallback before that CSS loads.
 theme:
   name: material
+  favicon: images/pyragify-branding/favicon/favicon-32-colored.svg
+  logo: images/pyragify-branding/icon/icon-colored.svg
   palette:
     - scheme: slate
-      primary: amber
+      primary: deep orange
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
     - scheme: default
-      primary: amber
+      primary: deep orange
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
-  icon:
-    logo: material/robot
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search
