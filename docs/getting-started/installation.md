@@ -179,14 +179,15 @@ experimental leads; source inspection is required before treating them as facts.
 
 ## CLI verification
 
-For a standalone installation, keep its virtual environment activated:
+For a standalone installation or a pip source install, keep its virtual
+environment activated:
 
 ```bash
 # View help
 pyragify --help
 ```
 
-For a consuming project or source checkout, run from its root instead:
+For a uv-managed project or source checkout, run from its root:
 
 ```bash
 uv run pyragify --help
@@ -252,8 +253,8 @@ python --version
 
 #### Virtual Environment Issues
 
-For a standalone CLI, activate the environment created above before running
-`pyragify`:
+For a standalone CLI or a pip source install, activate its environment before
+running `pyragify`:
 
 ```bash
 source pyragify-env/bin/activate  # Linux/macOS
@@ -262,15 +263,15 @@ python --version  # Should show Python 3.12.x
 pyragify --help
 ```
 
-For a consuming project or source checkout, use `uv run pyragify --help` from
+For a uv-managed project or source checkout, use `uv run pyragify --help` from
 its root. If the environment is missing, follow the corresponding installation
 route above.
 
 ### Testing the Installation
 
-With the standalone environment activated, create a simple test to verify
-everything is working. In a consuming project or source checkout, prefix the
-Pyragify command with `uv run`.
+With the standalone or pip source environment activated, create a simple test
+to verify the CLI works. In a uv-managed project or source checkout, prefix
+the Pyragify command with `uv run`.
 
 ```bash
 # Create a test directory

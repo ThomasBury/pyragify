@@ -347,10 +347,12 @@ Pyragify uses [semantic versioning](https://semver.org/):
 
 1. Update version in `pyproject.toml`
 2. Update `docs/changelog.md`
-3. Create git tag
-4. Push to GitHub
-5. Create the GitHub release and attach the distribution artifacts manually
-6. Publish to the package index separately, if intended
+3. Create and push the Git tag using the version number, such as `0.5.3`.
+4. Run `uv build` from a clean checkout of the tagged commit.
+5. Create the GitHub release and attach the installable wheel
+   `dist/pyragify-<version>-py3-none-any.whl` and source archive
+   `dist/pyragify-<version>.tar.gz`.
+6. Publish to the package index separately, if intended.
 
 Pushing a tag does not create a release or publish a package automatically;
 the repository workflows currently run tests and deploy documentation.

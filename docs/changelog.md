@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Stop exports with a Git error when Git cannot open the expected worktree or
-  list its files. The previous export stays intact.
+  list its files. The previous export stays intact. Respect Git discovery
+  ceilings and exclusions in explicitly configured worktrees.
 - Use forward slashes in artifact ownership lists and clean up stale parts from
-  older Windows exports while preserving files the exporter does not own.
+  older Windows exports, including parts already removed. Reject output
+  junctions before they can redirect writes or cleanup.
 - Cap the Windows worker pool at 61 and exercise cold exports and reruns on
   Windows in CI.
 
