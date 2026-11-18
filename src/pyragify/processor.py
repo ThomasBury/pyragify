@@ -16,6 +16,7 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 from os import cpu_count
 from collections import defaultdict
+from sys import platform
 from typing import Optional, Dict, Any, Tuple, List, Union
 from urllib.parse import quote
 from pyragify.utils import validate_directory
@@ -934,25 +935,34 @@ class RepoContentProcessor:
                    for root in (self.output_dir, self.graph_output_dir) if root is not None)
 
     def _discover_files(self):
-        try:
-            git = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse",
-                                  "--is-inside-work-tree"], capture_output=True)
-        except FileNotFoundError:
-            git = None
-        if git is not None and git.returncode == 0 and git.stdout.strip() == b"true":
+        git_root = next((directory for directory in (self.repo_path, *self.repo_path.parents)
+                         if (directory / ".git").exists(follow_symlinks=False)), None)
+        if git_root is not None:
+            def git(*args: str) -> bytes:
+                result = subprocess.run(["git", "-C", str(self.repo_path), *args], capture_output=True)
+                if result.returncode:
+                    diagnostic = os.fsdecode(result.stderr or result.stdout).strip()
+                    raise RuntimeError(
+                        f"git {' '.join(args)} failed in {self.repo_path} (exit {result.returncode}). {diagnostic}"
+                    )
+                return result.stdout
+
+            root_name = os.fsdecode(git("rev-parse", "--show-toplevel")).removesuffix("\n")
+            if platform == "win32":
+                root_name = root_name.removesuffix("\r")
+            worktree = Path(root_name)
+            if not worktree.is_absolute() or worktree.resolve() != git_root:
+                raise RuntimeError(f"Git reported worktree {worktree} but expected {git_root}")
+
             self.metadata["skipped_files"].append({"path": ".git", "reason": "Git repository metadata"})
-            ignored = subprocess.run(
-                ["git", "-C", str(self.repo_path), "ls-files", "--others", "--ignored",
-                 "--exclude-standard", "--directory", "-z"], capture_output=True, check=True)
-            for name in sorted(set(ignored.stdout.split(b"\0")) - {b""}):
+            ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
+            for name in sorted(set(ignored.split(b"\0")) - {b""}):
                 if self._is_inside_output_dir(self.repo_path / os.fsdecode(name)):
                     continue
                 self.metadata["skipped_files"].append({
                     "path": os.fsdecode(name), "reason": "Git ignore rule (directory entries cover descendants)"})
-            result = subprocess.run(
-                ["git", "-C", str(self.repo_path), "ls-files", "--cached", "--others",
-                 "--exclude-standard", "-z"], capture_output=True, check=True)
-            for name in sorted(set(result.stdout.split(b"\0")) - {b""}):
+            listed = git("ls-files", "--cached", "--others", "--exclude-standard", "-z")
+            for name in sorted(set(listed.split(b"\0")) - {b""}):
                 yield self.repo_path / os.fsdecode(name)
             return
 
@@ -997,13 +1007,15 @@ class RepoContentProcessor:
         self._reject_symlinks(manifest_path)
         previous = load_json(manifest_path, "Artifact list") if manifest_path.exists() else {}
         old_chunks = previous.get("chunks", [])
+        if isinstance(old_chunks, list):
+            old_chunks = [name.replace("\\", "/") if isinstance(name, str) else name for name in old_chunks]
         if not isinstance(old_chunks, list) or any(
             not isinstance(name, str) or not re.fullmatch(
                 r"(?:" + "|".join(MANAGED_OUTPUT_SUBDIRS) + r")/chunk_\d+\.(?:txt|md)", name)
             for name in old_chunks
         ):
             raise ValueError("Invalid owned artifact list")
-        chunks = sorted(str(path.relative_to(stage)) for path in stage.glob("*/chunk_*.md"))
+        chunks = sorted(path.relative_to(stage).as_posix() for path in stage.glob("*/chunk_*.md"))
         save_json({"chunks": chunks}, stage / manifest_path.name, "Artifact list")
         replacements = {self.output_dir / path.relative_to(stage): path
                         for path in stage.rglob("*") if path.is_file()}
@@ -1336,7 +1348,10 @@ class RepoContentProcessor:
             logger.info(f"Found {len(files_to_process)} new or modified files to process.")
             # 2. Process new or modified files in parallel.
             tasks = [(str(fp), str(self.repo_path), str(self.output_dir), self.enable_graph, self.graph_config) for fp in files_to_process]
-            with ProcessPoolExecutor(max_workers=cpu_count()) as executor:
+            workers = cpu_count() or 1
+            if platform == "win32":
+                workers = min(workers, 61)
+            with ProcessPoolExecutor(max_workers=workers) as executor:
                 results = executor.map(_process_file_worker, tasks)
                 for i, result in enumerate(results):
                     source_path = files_to_process[i]

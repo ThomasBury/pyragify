@@ -88,6 +88,99 @@ def test_selection_honors_nested_ignores_and_symlink_boundary(tmp_path, git_repo
     assert "external secret" not in "".join(p.read_text() for p in output.rglob("*.txt"))
 
 
+def test_plain_directory_does_not_need_git(tmp_path, monkeypatch):
+    repo, output = source(tmp_path)
+
+    def unexpected_git(*args, **kwargs):
+        pytest.fail("Plain directories should be walked without calling Git")
+
+    monkeypatch.setattr(subprocess, "run", unexpected_git)
+    processor = RepoContentProcessor(repo, output)
+    processor.process_repo()
+    assert [item["path"] for item in processor.metadata["processed_files"]] == ["app.py"]
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_git_discovery_from_source_subdirectory(tmp_path, linked):
+    repo, output = source(tmp_path)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    nested = repo / "nested"
+    nested.mkdir()
+    (nested / "tracked.py").write_text("TRACKED = True\n")
+    (repo / ".gitignore").write_text("/nested/ignored.py\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    if linked:
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                        "commit", "-q", "--no-gpg-sign", "-m", "Test worktree"], check=True)
+        worktree = tmp_path / "linked"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "--detach", str(worktree)], check=True)
+        assert (worktree / ".git").is_file()
+        nested = worktree / "nested"
+
+    (nested / "ignored.py").write_text("IGNORED = True\n")
+    (nested / "new.py").write_text("NEW = True\n")
+    processor = RepoContentProcessor(nested, output)
+    processor.process_repo()
+    assert [item["path"] for item in processor.metadata["processed_files"]] == ["new.py", "tracked.py"]
+    assert any(item["path"] == "ignored.py" for item in processor.metadata["skipped_files"])
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_damaged_git_worktree_preserves_previous_export(tmp_path, nested):
+    repo, output = source(tmp_path)
+    RepoContentProcessor(repo, output).process_repo()
+    before = snapshot(output)
+    (repo / "app.py").write_text("CHANGED = True\n")
+    if nested:
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        (repo / ".git").mkdir()
+        diagnostic = "Git reported worktree .* but expected"
+    else:
+        (repo / ".git").write_text("gitdir: missing-git-dir\n")
+        diagnostic = "missing-git-dir"
+    with pytest.raises(RuntimeError, match=diagnostic):
+        RepoContentProcessor(repo, output).process_repo()
+    assert snapshot(output) == before
+
+
+@pytest.mark.parametrize("failure", ["missing", "--ignored", "--cached"])
+def test_git_command_failure_preserves_previous_export(tmp_path, monkeypatch, failure):
+    repo, output = source(tmp_path)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    RepoContentProcessor(repo, output).process_repo()
+    before = snapshot(output)
+    (repo / "app.py").write_text("CHANGED = True\n")
+    run = subprocess.run
+
+    def failing_git(args, **kwargs):
+        if failure == "missing":
+            raise FileNotFoundError("git executable is missing")
+        if "ls-files" in args and failure in args:
+            return subprocess.CompletedProcess(args, 128, stderr=b"fatal: injected index read failure\n")
+        return run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", failing_git)
+    expected = "git executable is missing" if failure == "missing" else "fatal: injected index read failure"
+    with pytest.raises((FileNotFoundError, RuntimeError), match=expected):
+        RepoContentProcessor(repo, output).process_repo()
+    assert snapshot(output) == before
+
+
+@pytest.mark.parametrize("cpus, expected", [(64, 61), (2, 2)])
+def test_windows_worker_count_honors_executor_limit(tmp_path, monkeypatch, cpus, expected):
+    repo, output = source(tmp_path)
+    monkeypatch.setattr("pyragify.processor.platform", "win32")
+    monkeypatch.setattr("pyragify.processor.cpu_count", lambda: cpus)
+
+    def pool(*, max_workers):
+        assert max_workers == expected
+        return ThreadPoolExecutor(max_workers=max_workers)
+
+    monkeypatch.setattr("pyragify.processor.ProcessPoolExecutor", pool)
+    RepoContentProcessor(repo, output).process_repo()
+    assert (output / "python/chunk_0.md").is_file()
+
+
 def test_graph_deserialization_does_not_mutate_input():
     data = KnowledgeGraph().to_dict()
     before = copy.deepcopy(data)
@@ -184,14 +277,22 @@ def test_required_artifact_directory_causes_cli_failure(tmp_path):
     assert not (output / "python/chunk_0.md").exists()
 
 
-def test_symlinked_chunk_cannot_overwrite_external_file(tmp_path):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_symlinked_chunk_cannot_change_external_file(tmp_path, legacy):
     repo, output = source(tmp_path)
     (output / "python").mkdir(parents=True)
     external = tmp_path / "external.txt"
     external.write_text("precious")
-    (output / "python/chunk_0.md").symlink_to(external)
+    name = "chunk_0.txt" if legacy else "chunk_0.md"
+    chunk = output / "python" / name
+    chunk.symlink_to(external)
+    if legacy:
+        (output / ".pyragify-artifacts.json").write_text(json.dumps({"chunks": [f"python\\{name}"]}))
+    before = snapshot(output)
     with pytest.raises(ValueError, match="Symlink"):
         RepoContentProcessor(repo, output).process_repo()
+    assert snapshot(output) == before
+    assert chunk.is_symlink()
     assert external.read_text() == "precious"
 
 

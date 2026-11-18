@@ -33,3 +33,23 @@ jobs:
 
       - name: Verify bundled skill packaging and installation
         run: uv run --locked python scripts/check_skill_packaging.py
+
+  windows-export:
+    name: Windows export and rerun
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the project
+        run: uv sync --locked --python 3.12 --group dev
+
+      - name: Test export and rerun with the process pool
+        run: uv run --locked pytest tests/test_handoff.py::test_export_rerun_removes_owned_legacy_text_parts

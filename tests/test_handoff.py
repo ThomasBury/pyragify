@@ -266,14 +266,29 @@ def test_index_word_limit_is_enforced(tmp_path):
     assert not (tmp_path / "output/metadata.json").exists()
 
 
-def test_owned_legacy_text_parts_are_removed(tmp_path):
+@pytest.mark.parametrize("separator", ["/", "\\"])
+def test_export_rerun_removes_owned_legacy_text_parts(tmp_path, separator):
     repo = tmp_path / "repo"
     repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     (repo / "a.py").write_text("VALUE = 1\n")
     output = tmp_path / "output"
-    (output / "python").mkdir(parents=True)
-    (output / "python/chunk_0.txt").write_text("old owned output")
-    (output / ".pyragify-artifacts.json").write_text('{"chunks": ["python/chunk_0.txt"]}')
     RepoContentProcessor(repo, output).process_repo()
-    assert not (output / "python/chunk_0.txt").exists()
     check_handoff(repo, output)
+
+    ownership = output / ".pyragify-artifacts.json"
+    assert json.loads(ownership.read_text()) == {"chunks": ["python/chunk_0.md"]}
+    stale = output / "python/chunk_0.txt"
+    stale.write_text("old owned output")
+    unrelated = output / "python/chunk_7.txt"
+    unrelated.write_text("unowned file")
+    ownership.write_text(json.dumps({"chunks": [f"python{separator}chunk_0.{ext}" for ext in ("md", "txt")]}))
+
+    (repo / "b.py").write_text("VALUE = 2\n")
+    RepoContentProcessor(repo, output).process_repo()
+    manifest = check_handoff(repo, output)
+    assert manifest["reused_files"] == ["a.py"]
+    assert [item["path"] for item in manifest["processed_files"]] == ["a.py", "b.py"]
+    assert json.loads(ownership.read_text()) == {"chunks": ["python/chunk_0.md"]}
+    assert not stale.exists()
+    assert unrelated.read_text() == "unowned file"
