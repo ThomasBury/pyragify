@@ -8,18 +8,26 @@ Use the CLI directly or install the bundled skills to work through an agent.
 [Installation guide](https://thomasbury.github.io/pyragify/getting-started/installation/) ·
 [Quick start](https://thomasbury.github.io/pyragify/getting-started/quick-start/)
 
+- **Use it** when handing selected source to a reviewer or agent who needs
+  complete files, their original paths, and a list of omissions.
+- **Know the limits.** Review the selected source for secrets before sharing.
+  The `max_words` limit counts whitespace-separated words. The export fails if
+  a whole file or the index exceeds that limit.
+  Use a different tool if you need to enforce a model-token budget.
+- **Verify graph results** against the source before relying on them. Graphs are
+  optional and experimental.
+
 ## Use the CLI
 
 Python **3.12** is required (`>=3.12,<3.13`). Install
-[uv](https://docs.astral.sh/uv/getting-started/installation/), then install the
-wheel from the [0.5.3 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.3)
-in a virtual environment:
+[uv](https://docs.astral.sh/uv/getting-started/installation/), then install
+Pyragify from PyPI in a virtual environment:
 
 ```bash
 uv venv --python 3.12 pyragify-env
 source pyragify-env/bin/activate  # Linux/macOS
 # Windows PowerShell: pyragify-env\Scripts\Activate.ps1
-uv pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.3/pyragify-0.5.3-py3-none-any.whl
+uv pip install "pyragify>=0.5.3"
 ```
 
 With the environment activated, replace `./my-project` with your source directory
@@ -33,10 +41,10 @@ pyragify process-repo --repo-path ./my-project --output-dir ./output --no-enable
 
 Install Pyragify in the **consuming project's Python 3.12 environment** so
 [Library Skills](https://library-skills.io/reference/) can discover its bundled
-skills. From that project's root, install the wheel and both skills:
+skills. From that project's root, install Pyragify and both skills:
 
 ```bash
-uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.3/pyragify-0.5.3-py3-none-any.whl
+uv add --dev "pyragify>=0.5.3"
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
 uvx library-skills list --installed
 ```
@@ -61,20 +69,29 @@ Start at **`output/index.md`**. It links to complete source blocks in
 language-grouped Markdown parts and lists omissions. **`output/metadata.json`**
 records source paths, hashes, line ranges, and exact byte ranges within the parts.
 
+Here is an excerpt from an export that includes `hello.py` and skips `*.log`:
+
+```markdown
+## Files
+
+- [&quot;hello.py&quot;](python/chunk_0.md#source-68656c6c6f2e7079) — lines 1-2; MD5 44641958f3c8eb28b3323cf7400cd0f6
+
+## Omissions
+
+- &quot;.git&quot;: Git repository metadata
+- &quot;debug.log&quot;: Skipped by pattern or size
+```
+
+[Reproduce this export](https://thomasbury.github.io/pyragify/getting-started/quick-start/#reproduce-the-example)
+to see the linked source block and its manifest entry.
+
 Each selected UTF-8 file is retained once and whole, including imports,
 decorators, comments, whitespace, and Unicode. Rerun the same command after
 editing your repository: unchanged files reuse the cache, and deleted files
 disappear on the next successful export.
 
-Inspect exports before sharing them; filters do not detect secrets. The
-`max_words` limit counts whitespace-separated words, **not model tokens**, and
-includes Markdown formatting and the index. An oversized file or index fails
-the export instead of being truncated. Increase the limit or narrow the selection.
-
-The CLI loads `config.yaml` from the current directory when present; explicit
-CLI options override it. Graphs are **optional and experimental**, separate from
-the source handoff. Their relationships can be incomplete or wrong; check them
-against the source before drawing conclusions.
+The CLI loads `config.yaml` from the current directory when present. Explicit
+CLI options override it.
 
 ## Go further
 

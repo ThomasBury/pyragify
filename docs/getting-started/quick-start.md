@@ -58,3 +58,65 @@ acceptance or answer quality is guaranteed.
 
 See [configuration](configuration.md), the [CLI reference](../user-guide/cli-reference.md),
 and the [output contract](../user-guide/output-formats.md) for details.
+
+## Reproduce the example
+
+With the standalone CLI environment activated, run these commands in Bash. The
+temporary directory keeps the example Git repository outside your checkout.
+
+```bash
+example_dir=$(mktemp -d)
+cd "$example_dir"
+git init -q example
+printf 'def hello_world():\n    return "Hello, world!"\n' > example/hello.py
+printf 'debug message\n' > example/debug.log
+git -C example add -f hello.py debug.log
+pyragify process-repo --repo-path ./example --output-dir ./output --no-enable-graph --skip-patterns '*.log'
+```
+
+In `output/index.md`, follow the `hello.py` link to this block in
+`output/python/chunk_0.md`. The index also lists `debug.log` under **Omissions**.
+
+````markdown
+<a id="source-68656c6c6f2e7079"></a>
+
+### File: hello.py
+
+Lines: 1-2
+
+```python
+def hello_world():
+    return "Hello, world!"
+
+```
+
+````
+
+These selected fields from `output/metadata.json` identify the source and record
+the omission:
+
+```json
+{
+    "processed_files": [
+        {
+            "path": "hello.py",
+            "hash": "44641958f3c8eb28b3323cf7400cd0f6",
+            "output": {
+                "part": "python/chunk_0.md",
+                "start_byte": 80,
+                "end_byte": 126
+            }
+        }
+    ],
+    "skipped_files": [
+        {
+            "path": "debug.log",
+            "reason": "Skipped by pattern or size"
+        }
+    ]
+}
+```
+
+Bytes `[80:126]` of the Markdown part are exactly the bytes in `example/hello.py`.
+See the [output contract](../user-guide/output-formats.md#manifest) for field
+definitions and a verification example.
