@@ -78,13 +78,13 @@ def process_repo(
     Examples
     --------
     Run the command with the default configuration file:
-        $ python -m yourmodule.cli process-repo
+        $ pyragify process-repo
 
     Override the repository path and enable verbose output:
-        $ python -m yourmodule.cli process-repo --repo-path /path/to/repo --verbose
+        $ pyragify process-repo --repo-path /path/to/repo --verbose
 
     Specify a custom configuration file:
-        $ python -m yourmodule.cli process-repo --config-file custom_config.yaml
+        $ pyragify process-repo --config-file custom_config.yaml
     """
 
     # Load configuration from YAML

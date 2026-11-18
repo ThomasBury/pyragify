@@ -863,10 +863,9 @@ class GraphBuilder:
         """
         Extract dependencies from file content.
 
-        This is a placeholder method that should be implemented
-        with language-specific dependency extraction logic.
+        Uses language-specific extraction for Python, JavaScript, TypeScript,
+        Java, C, and C++. Other languages return no dependency edges.
         """
-        # Placeholder implementation - will be expanded in Phase 2
         dependencies = []
 
         if language == "python":

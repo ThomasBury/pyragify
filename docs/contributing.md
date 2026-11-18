@@ -223,9 +223,6 @@ test: add unit tests for CLI commands
 # Run all tests
 pytest
 
-# Run with coverage
-pytest --cov=pyragify --cov-report=html
-
 # Run specific test file
 pytest tests/test_processor.py
 
@@ -267,32 +264,19 @@ def hello_world():
         assert chunks[0]["name"] == "hello_world"
 ```
 
-### Test Coverage
-
-Aim for high test coverage:
-
-```bash
-# Check coverage
-pytest --cov=pyragify --cov-report=term-missing
-
-# Generate HTML coverage report
-pytest --cov=pyragify --cov-report=html
-open htmlcov/index.html  # View report
-```
-
 ## Documentation
 
 ### Building Docs Locally
 
 ```bash
 # Install documentation dependencies
-pip install mkdocs mkdocs-material
+uv sync --locked --group docs
 
 # Serve docs locally
-mkdocs serve
+uv run --locked --group docs mkdocs serve
 
 # Build docs
-mkdocs build
+uv run --locked --group docs mkdocs build --strict
 ```
 
 ### Documentation Guidelines
@@ -305,65 +289,21 @@ mkdocs build
 
 ## Adding Language Support
 
-### Parser Implementation
+Ordinary UTF-8 files are already retained by `FileProcessor.chunk_file` without
+a language parser. Add a parser only when extending experimental graph analysis.
 
-To add support for a new language:
+For graph support, extend `GraphBuilder.extract_dependencies` in
+`src/pyragify/graph.py` and, where needed, the semantic chunk extraction in
+`src/pyragify/processor.py`. Update `FILE_TYPE_MAP` in the processor and the
+grammar factories in `src/pyragify/graph.py` when introducing a new language or
+grammar.
 
-1. **Choose parser strategy**:
-   - AST parsing (like Python)
-   - Tree-sitter parsing
-   - Regex-based parsing
-
-2. **Implement parser method**:
-
-```python
-def _parse_new_language(self, content: str, file_path: Path) -> List[GraphEdge]:
-    """Parse new language and extract relationships."""
-    edges = []
-
-    # Your parsing logic here
-    # Extract imports, calls, inheritance, etc.
-
-    return edges
-```
-
-3. **Add to main processing logic**:
-
-```python
-elif language == "new_language":
-    dependencies = self._parse_new_language(content, file_path)
-```
-
-4. **Update FILE_TYPE_MAP**:
-
-```python
-FILE_TYPE_MAP.update({
-    ".newlang": "new_language",
-    ".new": "new_language"
-})
-```
-
-### Testing New Language Support
-
-```python
-def test_new_language_support(tmp_path):
-    """Test parsing of new language files."""
-    processor = FileProcessor(tmp_path, tmp_path / "output")
-
-    # Create test file
-    test_file = tmp_path / "test.new"
-    test_file.write_text("""
-import something
-func call_other()
-class MyClass extends BaseClass
-""")
-
-    # Test parsing
-    dependencies = processor.extract_dependencies(test_file, test_file.read_text(), "new_language")
-
-    # Verify results
-    assert len(dependencies) > 0
-```
+Follow the existing parser checks in
+[`tests/test_processor.py`](https://github.com/ThomasBury/pyragify/blob/main/tests/test_processor.py)
+and dependency and call tests in
+[`tests/test_graph_call_hierarchy.py`](https://github.com/ThomasBury/pyragify/blob/main/tests/test_graph_call_hierarchy.py).
+Test both the extracted relationships and complete source retention; parser
+failures must not remove source from the handoff.
 
 ## Performance Optimization
 
@@ -409,7 +349,11 @@ Pyragify uses [semantic versioning](https://semver.org/):
 2. Update `docs/changelog.md`
 3. Create git tag
 4. Push to GitHub
-5. GitHub Actions will create release
+5. Create the GitHub release and attach the distribution artifacts manually
+6. Publish to the package index separately, if intended
+
+Pushing a tag does not create a release or publish a package automatically;
+the repository workflows currently run tests and deploy documentation.
 
 ## Community
 

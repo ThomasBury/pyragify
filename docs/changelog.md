@@ -5,6 +5,17 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-11-17
+
+### Fixed
+
+- Add installed-skill checks and example requests, and distinguish standalone
+  CLI usage from consuming-project and source-checkout workflows.
+- Correct contributor commands, graph-extension guidance, and the manual
+  GitHub release process; remove commands requiring undeclared coverage tools.
+- Correct API docstrings and remove the stale cache-version claim.
+  Executable Python behavior and dependencies are unchanged.
+
 ## [0.5.1] — 2026-11-16
 
 ### Changed
