@@ -130,8 +130,6 @@ editable, and source-distribution installations:
 uv run --locked python scripts/check_skill_packaging.py
 ```
 
-Installation from PyPI remains unverified until PyPI publication.
-
 ## Use the skills
 
 After installing the skills, check the installed targets from the project root:
