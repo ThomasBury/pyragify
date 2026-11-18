@@ -131,7 +131,7 @@ uv sync --locked --group dev
 uv run pyragify process-repo --config-file config.yaml
 ```
 
-The export selects 58 files (54,535 words) into `./output/`. Git ignore rules
+The export selects 58 files (54,609 words) into `./output/`. Git ignore rules
 omit `.venv/`, `dist/`, `site/`, and caches; `config.yaml` skips `uv.lock`,
 `.gitignore`, and images; the generated `output/` directory excludes itself.
 

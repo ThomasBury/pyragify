@@ -5,6 +5,22 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] — 2026-11-18
+
+### Added
+
+- Apply the Pyragify brand kit to the README and hosted documentation: banner,
+  header logo, favicon, and a charcoal/ivory/vermilion palette in both color
+  schemes.
+- Show Pyragify exported from its own repository in the README and Quick Start,
+  with real index entries, omissions, a complete source block, and manifest
+  byte ranges.
+
+### Changed
+
+- Ignore generated `output/` and `graphs/` handoffs in Git. Runtime behavior
+  and dependencies are unchanged.
+
 ## [0.5.4] — 2026-11-18
 
 ### Added

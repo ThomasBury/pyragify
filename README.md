@@ -69,7 +69,7 @@ Start at **`output/index.md`**. It links to complete source blocks in
 language-grouped Markdown parts and lists omissions. **`output/metadata.json`**
 records source paths, hashes, line ranges, and exact byte ranges within the parts.
 
-Here is Pyragify exported from its own repository: 58 files, 54,535 words.
+Here is Pyragify exported from its own repository: 58 files, 54,609 words.
 From a checkout with the dev environment installed, reproduce it with:
 
 ```bash
