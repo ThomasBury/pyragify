@@ -5,6 +5,19 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-11-18
+
+### Fixed
+
+- Stop exports with a Git error when Git cannot open the expected worktree or
+  list its files. The previous export stays intact. Respect Git discovery
+  ceilings and exclusions in explicitly configured worktrees.
+- Use forward slashes in artifact ownership lists and clean up stale parts from
+  older Windows exports, including parts already removed. Reject output
+  junctions before they can redirect writes or cleanup.
+- Cap the Windows worker pool at 61 and exercise cold exports and reruns on
+  Windows in CI.
+
 ## [0.5.2] — 2026-11-17
 
 ### Fixed

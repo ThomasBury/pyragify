@@ -12,14 +12,14 @@ Use the CLI directly or install the bundled skills to work through an agent.
 
 Python **3.12** is required (`>=3.12,<3.13`). Install
 [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the
-wheel from the [0.5.2 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.2)
+wheel from the [0.5.3 release](https://github.com/ThomasBury/pyragify/releases/tag/0.5.3)
 in a virtual environment:
 
 ```bash
 uv venv --python 3.12 pyragify-env
 source pyragify-env/bin/activate  # Linux/macOS
 # Windows PowerShell: pyragify-env\Scripts\Activate.ps1
-uv pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.2/pyragify-0.5.2-py3-none-any.whl
+uv pip install https://github.com/ThomasBury/pyragify/releases/download/0.5.3/pyragify-0.5.3-py3-none-any.whl
 ```
 
 With the environment activated, replace `./my-project` with your source directory
@@ -36,7 +36,7 @@ Install Pyragify in the **consuming project's Python 3.12 environment** so
 skills. From that project's root, install the wheel and both skills:
 
 ```bash
-uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.2/pyragify-0.5.2-py3-none-any.whl
+uv add --dev https://github.com/ThomasBury/pyragify/releases/download/0.5.3/pyragify-0.5.3-py3-none-any.whl
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
 uvx library-skills list --installed
 ```
