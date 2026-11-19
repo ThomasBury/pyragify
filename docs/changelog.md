@@ -5,6 +5,16 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] — 2026-11-18
+
+### Changed
+
+- Restructure the README for first-time readers: add PyPI, Python, tests, and
+  license badges; show the output tree and how the index, source parts, and
+  manifest relate; explain how to use the export as a human or with an AI
+  assistant such as NotebookLM, and to re-export after significant code changes.
+  Runtime behavior and dependencies are unchanged.
+
 ## [0.5.5] — 2026-11-18
 
 ### Added

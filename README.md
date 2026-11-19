@@ -1,5 +1,10 @@
 ![Pyragify — Every file. Clearly organized.](docs/images/pyragify-branding/banner/banner-colored.svg)
 
+[![PyPI](https://img.shields.io/pypi/v/pyragify)](https://pypi.org/project/pyragify/)
+[![Python](https://img.shields.io/badge/python-3.12-blue)](https://thomasbury.github.io/pyragify/getting-started/installation/)
+[![Tests](https://img.shields.io/github/actions/workflow/status/ThomasBury/pyragify/tests.yml?branch=main&label=tests)](https://github.com/ThomasBury/pyragify/actions/workflows/tests.yml)
+[![License: The Unlicense](https://img.shields.io/pypi/l/pyragify)](https://github.com/ThomasBury/pyragify/blob/main/LICENSE)
+
 Pyragify exports complete selected source files from a local repository as
 readable Markdown, with a JSON manifest recording source locations and omissions.
 Use the CLI directly or install the bundled skills to work through an agent.
@@ -8,16 +13,19 @@ Use the CLI directly or install the bundled skills to work through an agent.
 [Installation guide](https://thomasbury.github.io/pyragify/getting-started/installation/) ·
 [Quick start](https://thomasbury.github.io/pyragify/getting-started/quick-start/)
 
-- **Use it** when handing selected source to a reviewer or agent who needs
-  complete files, their original paths, and a list of omissions.
-- **Know the limits.** Review the selected source for secrets before sharing.
-  The `max_words` limit counts whitespace-separated words. The export fails if
-  a whole file or the index exceeds that limit.
-  Use a different tool if you need to enforce a model-token budget.
-- **Verify graph results** against the source before relying on them. Graphs are
-  optional and experimental.
+## Why Pyragify
 
-## Use the CLI
+- **Complete files, not fragments.** Each selected file is exported whole —
+  imports, decorators, comments, whitespace, and Unicode — as one readable
+  Markdown block.
+- **Provenance you can check.** Every file keeps its original path, line range,
+  and an MD5 snapshot hash; the manifest adds exact byte ranges.
+- **Honest omissions.** The index lists what was excluded and why, so a reader
+  knows what they are *not* seeing.
+
+Review the selected source for secrets before sharing.
+
+## Quick start
 
 Python **3.12** is required (`>=3.12,<3.13`). Install
 [uv](https://docs.astral.sh/uv/getting-started/installation/), then install
@@ -37,37 +45,46 @@ and export it to a dedicated output directory:
 pyragify process-repo --repo-path ./my-project --output-dir ./output --no-enable-graph
 ```
 
-## Use an agent
+The CLI loads `config.yaml` from the current directory when present. Explicit
+CLI options override it.
 
-Install Pyragify in the **consuming project's Python 3.12 environment** so
-[Library Skills](https://library-skills.io/reference/) can discover its bundled
-skills. From that project's root, install Pyragify and both skills:
+## What you get
 
-```bash
-uv add --dev "pyragify>=0.5.3"
-uvx library-skills install --skill pyragify-export --skill pyragify-graph
-uvx library-skills list --installed
+An export is a small, self-contained handoff:
+
+```text
+output/
+├── index.md          ← start here: every exported file and omission, with links
+├── metadata.json     ← machine-readable manifest: paths, hashes, byte ranges
+├── python/
+│   └── chunk_0.md    ← complete source blocks, grouped by language
+├── markdown/
+│   └── chunk_0.md
+└── other/
+    └── chunk_0.md
 ```
 
-This example assumes the project's declared `requires-python` range is
-`>=3.12,<3.13` and its environment uses Python 3.12. If prompted for an
-installation target, accept Agents (`.agents/skills`). In an agent that loads
-that directory, try one of these requests:
+`index.md` is the entry point. Each entry links to exactly one fenced source
+block in a language-grouped part, and each block contains one complete file.
+`metadata.json` describes the same files for programs: source path, hash, line
+range, and the exact byte range of the block within its part. `hashes.json` and
+the hidden `.pyragify-*.json` files are internal bookkeeping (cache and cleanup);
+you never need to touch them.
 
-| Skill | Purpose | Example request |
-| --- | --- | --- |
-| `pyragify-export` | Export complete source and review its manifest. | "Use pyragify-export to export this repository to `./output` without a graph and review the omissions." |
-| `pyragify-graph` | Explore experimental relationships and check them against source. | "Use pyragify-graph to find candidate callers of `hello_world` and verify them against the source." |
+## How to use the output
 
-Replace `hello_world` with a function in your repository. See the
-[agent installation guide](https://thomasbury.github.io/pyragify/getting-started/installation/#agent-skills)
-for broader Python compatibility, installation targets, and upgrades.
+- **As a human:** open `index.md`, follow a file link, read or copy the complete
+  source. Check the omissions list to see what was left out.
+- **With an AI assistant or NotebookLM:** upload the Markdown parts as sources.
+  Because every block is a whole file, the model reads each file in full context
+  rather than a fragment. Scripts and agents can use `metadata.json` to locate
+  and verify any block byte-for-byte.
+- **Keep it fresh:** an export is a snapshot of your code at run time. Re-run the
+  export whenever the code changes significantly, before sharing it again.
+  Unchanged files are served from the cache, so re-runs are fast, and deleted
+  files disappear on the next successful export.
 
-## Understand the output
-
-Start at **`output/index.md`**. It links to complete source blocks in
-language-grouped Markdown parts and lists omissions. **`output/metadata.json`**
-records source paths, hashes, line ranges, and exact byte ranges within the parts.
+## See it on itself
 
 Here is Pyragify exported from its own repository: 58 files, 54,653 words.
 From a checkout with the dev environment installed, reproduce it with:
@@ -120,13 +137,39 @@ sources change. See [Pyragify on itself](https://thomasbury.github.io/pyragify/g
 for the full source block, or the
 [minimal sandboxed example](https://thomasbury.github.io/pyragify/getting-started/quick-start/#reproduce-the-example).
 
-Each selected UTF-8 file is retained once and whole, including imports,
-decorators, comments, whitespace, and Unicode. Rerun the same command after
-editing your repository: unchanged files reuse the cache, and deleted files
-disappear on the next successful export.
+## Use with an agent
 
-The CLI loads `config.yaml` from the current directory when present. Explicit
-CLI options override it.
+Install Pyragify in the **consuming project's Python 3.12 environment** so
+[Library Skills](https://library-skills.io/reference/) can discover its bundled
+skills. From that project's root, install Pyragify and both skills:
+
+```bash
+uv add --dev "pyragify>=0.5.3"
+uvx library-skills install --skill pyragify-export --skill pyragify-graph
+uvx library-skills list --installed
+```
+
+This example assumes the project's declared `requires-python` range is
+`>=3.12,<3.13` and its environment uses Python 3.12. If prompted for an
+installation target, accept Agents (`.agents/skills`). In an agent that loads
+that directory, try one of these requests:
+
+| Skill | Purpose | Example request |
+| --- | --- | --- |
+| `pyragify-export` | Export complete source and review its manifest. | "Use pyragify-export to export this repository to `./output` without a graph and review the omissions." |
+| `pyragify-graph` | Explore experimental relationships and check them against source. | "Use pyragify-graph to find candidate callers of `hello_world` and verify them against the source." |
+
+Replace `hello_world` with a function in your repository. See the
+[agent installation guide](https://thomasbury.github.io/pyragify/getting-started/installation/#agent-skills)
+for broader Python compatibility, installation targets, and upgrades.
+
+## Good to know
+
+- The `max_words` limit counts whitespace-separated words, not model tokens.
+  The export fails if a whole file or the index exceeds that limit — there is no
+  silent truncation. Use a different tool if you need to enforce a token budget.
+- Graphs are optional and experimental. Verify graph results against the source
+  before relying on them.
 
 ## Go further
 
