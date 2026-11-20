@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import ast
-import codecs
 import hashlib
 import html
 import json
@@ -17,23 +18,27 @@ from concurrent.futures import ProcessPoolExecutor
 from os import cpu_count
 from collections import defaultdict
 from sys import platform
-from typing import Optional, Dict, Any, Tuple, List, Union
+from threading import Lock
+from typing import TYPE_CHECKING, Optional, Dict, Any, Tuple, List, Union
 from urllib.parse import quote
 from pyragify.utils import validate_directory
 from pyragify.graph import (
     GraphBuilder,
     _JavaScriptAnalysis,
     KnowledgeGraph,
+    _require_graph_extra,
     get_tree_sitter_language_and_parser,
     tree_sitter_match_captures,
 )
 
-from tree_sitter import Language, Node, Query, QueryCursor
+if TYPE_CHECKING:
+    from tree_sitter import Language, Node
 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+_secret_scan_lock = Lock()
 
 def save_json(data: dict, file_path: Path, description: str):
     """Atomically save JSON; serialization and filesystem errors propagate."""
@@ -49,40 +54,6 @@ def save_json(data: dict, file_path: Path, description: str):
         if temporary is not None:
             temporary.unlink(missing_ok=True)
 
-def compute_file_hash(file_path: Path) -> str:
-    """
-    Compute the MD5 hash of a file.
-
-    Parameters
-    ----------
-    file_path : pathlib.Path
-        The path to the file whose hash is to be computed.
-
-    Returns
-    -------
-    str or None
-        The MD5 hash of the file as a hexadecimal string, or None if an error occurs.
-
-    Raises
-    ------
-    Exception
-        If the file cannot be read, the error is logged and None is returned.
-
-    Notes
-    -----
-    MD5 is not suitable for cryptographic purposes but is sufficient for file integrity checks.
-    """
-
-    hash_md5 = hashlib.md5()
-    try:
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_md5.update(chunk)
-    except Exception as e:
-        logger.error(f"Error computing hash for {file_path}: {e}")
-        return None
-    return hash_md5.hexdigest()
-
 def load_json(file_path: Path, description: str) -> dict:
     """Load a required JSON object; invalid or missing inputs raise an error."""
     with file_path.open(encoding="utf-8") as stream:
@@ -91,27 +62,26 @@ def load_json(file_path: Path, description: str) -> dict:
         raise ValueError(f"{description} must contain a JSON object")
     return data
 
-def is_documentation_file(file_path: Path) -> bool:
-    """
-    Check if a file is a documentation file based on its name.
 
-    Parameters
-    ----------
-    file_path : pathlib.Path
-        The path to the file being checked.
+def _check_secrets(active_records: dict[str, dict]) -> None:
+    try:
+        from detect_secrets.core.scan import _process_line_based_plugins
+        from detect_secrets.settings import default_settings
+    except ImportError as error:
+        raise RuntimeError("Secret scanning requires `pyragify[scan]`.") from error
 
-    Returns
-    -------
-    bool
-        True if the file is recognized as a documentation file, otherwise False.
+    # detect-secrets settings are process-wide.
+    with _secret_scan_lock, default_settings() as settings:
+        settings.disable_filters("detect_secrets.filters.common.is_ignored_due_to_verification_policies")
+        for path, record in sorted(active_records.items()):
+            source = record["chunks"][0]["content"]
+            lines = list(enumerate(StringIO(source, newline=None), start=1))
+            # shortcut: pinned detect-secrets has no public in-memory file scan API; use it when available.
+            finding = next(_process_line_based_plugins(lines, path), None)
+            if finding is not None:
+                raise RuntimeError(f"detect-secrets flagged {path!r} at line {finding.line_number}. "
+                                   "Review the source before exporting.")
 
-    Notes
-    -----
-    This function specifically checks for common documentation filenames such as 'README.md' or 'CHANGELOG.md'.
-    """
-
-    documentation_files = ["README.md", "README.rst", "CONTRIBUTING.md", "CHANGELOG.md"]
-    return file_path.name in documentation_files
 
 FILE_TYPE_MAP = {
     ".py": "python",
@@ -146,54 +116,6 @@ MANAGED_OUTPUT_SUBDIRS = sorted(set(FILE_TYPE_MAP.values()) | {"other"})
 MARKDOWN_HEADER_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 MARKDOWN_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
-
-def is_probably_binary_file(file_path: Path, sample_size: int = 2048) -> bool:
-    """Heuristically detect binary files so they can be skipped before decoding."""
-    try:
-        with open(file_path, "rb") as file:
-            sample = file.read(sample_size + 1)
-            complete = len(sample) <= sample_size
-            sample = sample[:sample_size]
-    except OSError:
-        return False
-
-    if not sample:
-        return False
-
-    if b"\x00" in sample:
-        return True
-
-    try:
-        codecs.getincrementaldecoder("utf-8")().decode(sample, final=complete)
-    except UnicodeDecodeError:
-        return True
-
-    return False
-
-def read_file_in_chunks(file_path: Path, chunk_size: int = 4096):
-    """
-    Read a file in chunks to handle large files efficiently.
-
-    Parameters
-    ----------
-    file_path : pathlib.Path
-        The path to the file to be read.
-    chunk_size : int, optional
-        The size of each chunk in bytes. Default is 4096.
-
-    Yields
-    ------
-    str
-        A chunk of the file as a string.
-
-    Notes
-    -----
-    This function is useful for processing very large files without loading them entirely into memory.
-    """
-
-    with open(file_path, "r", encoding="utf-8") as file:
-        while chunk := file.read(chunk_size):
-            yield chunk
 
 def _process_file_worker(task_args: tuple[str, str, str, bool, Optional[Dict[str, Any]]]) -> Optional[Tuple[str, str, dict, list, Optional[Dict[str, Any]]]]:
     """
@@ -268,6 +190,8 @@ class FileProcessor:
 
     def __init__(self, repo_path: Path, output_dir: Path,
                  enable_graph: bool = False, graph_config: Optional[Dict[str, Any]] = None):
+        if enable_graph:
+            _require_graph_extra()
         self.repo_path = repo_path.resolve()
         self.output_dir = output_dir.resolve()
         validate_directory(self.output_dir)
@@ -623,6 +547,8 @@ class FileProcessor:
         """
         chunks = []
         try:
+            from tree_sitter import Query, QueryCursor
+
             query = Query(language, query_str)
             for match in QueryCursor(query).matches(root_node):
                 match_captures = tree_sitter_match_captures(match)
@@ -810,7 +736,7 @@ class RepoContentProcessor:
         Determine the output subdirectory for a file based on its type.
     """
 
-    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None, enable_graph: bool = False, graph_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None, enable_graph: bool = False, graph_config: Optional[Dict[str, Any]] = None, scan_secrets: bool = False):
         if max_words <= 0:
             raise ValueError("max_words must be positive")
         self.repo_path = repo_path.resolve()
@@ -826,6 +752,7 @@ class RepoContentProcessor:
         self._gitignore_specs = {}
         self.max_words = max_words
         self.max_file_size = max_file_size
+        self.scan_secrets = scan_secrets
         self.skip_patterns = list(dict.fromkeys(DEFAULT_SKIP_PATTERNS + (skip_patterns or [])))
         self.skip_dirs = skip_dirs or ["node_modules", "__pycache__"]
         self.ignore_patterns = self.load_ignore_patterns()
@@ -905,12 +832,25 @@ class RepoContentProcessor:
         if not isinstance(chunks, list) or len(chunks) != 1 or not isinstance(chunks[0], dict):
             return False
         chunk = chunks[0]
-        if chunk.get("type") != "file" or not isinstance(chunk.get("content"), str):
+        content = chunk.get("content")
+        if chunk.get("type") != "file" or not isinstance(content, str):
             return False
-        if hashlib.md5(chunk["content"].encode("utf-8")).hexdigest() != current_hash:
+        try:
+            cached_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
+        except UnicodeEncodeError:
+            return False
+        if cached_hash != current_hash:
             return False
         if metadata.get("hash") != current_hash or not isinstance(metadata.get("parser_limitations"), list):
             return False
+        line_count = sum(1 for _ in StringIO(content, newline=None))
+        for stored, expected in (
+            (chunk.get("start_line"), int(bool(content))),
+            (chunk.get("end_line"), line_count),
+            (metadata.get("lines"), line_count),
+        ):
+            if type(stored) is not int or stored != expected:
+                return False
         if self.enable_graph:
             try:
                 KnowledgeGraph.from_dict(record.get("graph"))
@@ -962,30 +902,42 @@ class RepoContentProcessor:
                     )
                 return result.stdout
 
-            root_name = os.fsdecode(git("rev-parse", "--show-toplevel")).removesuffix("\n")
-            if platform == "win32":
-                root_name = root_name.removesuffix("\r")
-            worktree = Path(root_name)
-            if not worktree.is_absolute():
-                raise RuntimeError(f"Git reported an invalid worktree path {root_name!r}")
-            worktree = worktree.resolve()
-            if git_root is not None and worktree != git_root:
-                raise RuntimeError(f"Git reported worktree {worktree} but expected {git_root}")
-            if not self.repo_path.is_relative_to(worktree):
-                raise RuntimeError(f"Source directory {self.repo_path} is outside Git worktree {worktree}")
+            def git_paths(*args: str) -> list[str]:
+                names = sorted(set(git("ls-files", *args, "-z").split(b"\0")) - {b""})
+                paths = [os.fsdecode(name) for name in names]
+                for name in paths:
+                    path = Path(name)
+                    if path.anchor or not path.parts or ".." in path.parts:
+                        raise RuntimeError(f"Git reported a path outside the source directory: {name!r}")
+                return paths
 
-            if git_root is not None:
-                self.metadata["skipped_files"].append({"path": ".git", "reason": "Git repository metadata"})
-            ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
-            for name in sorted(set(ignored.split(b"\0")) - {b""}):
-                if self._is_inside_output_dir(self.repo_path / os.fsdecode(name)):
-                    continue
-                self.metadata["skipped_files"].append({
-                    "path": os.fsdecode(name), "reason": "Git ignore rule (directory entries cover descendants)"})
-            listed = git("ls-files", "--cached", "--others", "--exclude-standard", "-z")
-            for name in sorted(set(listed.split(b"\0")) - {b""}):
-                yield self.repo_path / os.fsdecode(name)
-            return
+            try:
+                root_name = os.fsdecode(git("rev-parse", "--show-toplevel")).removesuffix("\n")
+                if platform == "win32":
+                    root_name = root_name.removesuffix("\r")
+                worktree = Path(root_name)
+                if not worktree.is_absolute():
+                    raise RuntimeError(f"Git reported an invalid worktree path {root_name!r}")
+                worktree = worktree.resolve()
+                if git_root is not None and worktree != git_root:
+                    raise RuntimeError(f"Git reported worktree {worktree} but expected {git_root}")
+                if not self.repo_path.is_relative_to(worktree):
+                    raise RuntimeError(f"Source directory {self.repo_path} is outside Git worktree {worktree}")
+
+                ignored = git_paths("--others", "--ignored", "--exclude-standard", "--directory")
+                listed = git_paths("--cached", "--others", "--exclude-standard")
+            except (OSError, RuntimeError, ValueError) as error:
+                logger.warning("Git discovery failed, falling back to directory walk: %s", error)
+            else:
+                if git_root is not None:
+                    self.metadata["skipped_files"].append({"path": ".git", "reason": "Git repository metadata"})
+                for name in ignored:
+                    if not self._is_inside_output_dir(self.repo_path / name):
+                        self.metadata["skipped_files"].append({
+                            "path": name, "reason": "Git ignore rule (directory entries cover descendants)"})
+                for name in listed:
+                    yield self.repo_path / name
+                return
 
         def walk_error(error):
             raise error
@@ -1014,7 +966,7 @@ class RepoContentProcessor:
             if directory not in self._gitignore_specs:
                 ignore = directory / ".gitignore"
                 self._gitignore_specs[directory] = pathspec.PathSpec.from_lines(
-                    "gitwildmatch", ignore.read_text(encoding="utf-8").splitlines()
+                    "gitwildmatch", ignore.read_text(encoding="utf-8", errors="surrogateescape").splitlines()
                     if ignore.is_file() and not ignore.is_symlink() else [])
             relative = path.relative_to(directory).as_posix() + ("/" if path.is_dir() else "")
             for pattern in self._gitignore_specs[directory].patterns:
@@ -1171,7 +1123,7 @@ class RepoContentProcessor:
             file_path = self.repo_path / ignore_file
             if file_path.exists() and not file_path.is_symlink():
                 logger.info(f"Loading ignore patterns from {ignore_file}")
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, "r", encoding="utf-8", errors="surrogateescape") as f:
                     ignore_patterns.extend(f.readlines())
 
         # Add additional skip_patterns
@@ -1227,14 +1179,6 @@ class RepoContentProcessor:
                 "reason": "File exceeds size limit"
             })
             logger.debug(f"Skipped file due to size: {file_path}")
-            return True
-
-        if file_path.is_file() and is_probably_binary_file(file_path):
-            self.metadata["skipped_files"].append({
-                "path": str(file_path.relative_to(self.repo_path)),
-                "reason": "Binary or image file"
-            })
-            logger.debug(f"Skipped binary/image file: {file_path}")
             return True
 
         return False
@@ -1347,13 +1291,18 @@ class RepoContentProcessor:
                     self.metadata["skipped_files"].append({"path": relative_path, "reason": "Skipped by pattern or size"})
                 continue
 
-            current_hash = compute_file_hash(file_path)
-            if not current_hash:
-                self.metadata["failed_files"].append({"path": str(file_path.relative_to(self.repo_path)), "reason": "Error computing file hash"})
-                logger.warning(f"Skipped file due to hash error: {file_path}")
+            relative_path = str(file_path.relative_to(self.repo_path))
+            try:
+                source = file_path.read_bytes()
+                if b"\x00" in source:
+                    self.metadata["skipped_files"].append({"path": relative_path, "reason": "Binary file (NUL byte)"})
+                    continue
+                source.decode("utf-8")
+            except (OSError, UnicodeDecodeError) as error:
+                self.metadata["failed_files"].append({"path": relative_path, "reason": str(error)})
                 continue
 
-            relative_path = str(file_path.relative_to(self.repo_path))
+            current_hash = hashlib.md5(source).hexdigest()
             cache_record = cache_files.get(relative_path)
             if self._is_cache_record_usable(cache_record, current_hash, relative_path):
                 active_records[relative_path] = cache_record
@@ -1393,6 +1342,9 @@ class RepoContentProcessor:
 
         if self.metadata["failed_files"]:
             raise RuntimeError(f"Source processing failed: {self.metadata['failed_files']}")
+
+        if self.scan_secrets:
+            _check_secrets(active_records)
 
         # 3. Rebuild aggregate output from every active source record.
         self.hashes = {
@@ -1442,7 +1394,13 @@ class RepoContentProcessor:
                 graph_dict = self.repo_graph.to_dict()
                 save_json(graph_dict, stage / "repository_graph.json", "Repository graph")
                 self.metadata["graph"] = graph_dict["metadata"].copy()
-                self.metadata["graph"]["output_path"] = str(self.graph_output_dir / "repository_graph.json")
+                graph_path = self.graph_output_dir / "repository_graph.json"
+                try:
+                    graph_path = Path(os.path.relpath(graph_path, output_dir))
+                except ValueError:
+                    # Windows paths on different drives have no relative representation.
+                    pass
+                self.metadata["graph"]["output_path"] = graph_path.as_posix()
             save_json(self.metadata, stage / "metadata.json", "Metadata")
             save_json(self.hashes, stage / "hashes.json", "Hashes")
             save_json(self.file_cache, stage / CACHE_FILENAME, "File cache")

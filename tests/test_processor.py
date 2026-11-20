@@ -4,7 +4,7 @@ import pytest
 from tree_sitter import Language, Parser, Query, QueryCursor
 
 from pyragify.graph import get_tree_sitter_language_and_parser
-from pyragify.processor import FileProcessor, compute_file_hash, save_json, load_json, is_documentation_file, read_file_in_chunks
+from pyragify.processor import FileProcessor, save_json, load_json
 
 
 @pytest.mark.parametrize("language, source, expression, expected", [
@@ -172,12 +172,6 @@ body {
 """)
     return file_path
 
-def test_compute_file_hash(sample_python_file):
-    """Test file hash computation."""
-    hash_value = compute_file_hash(sample_python_file)
-    assert isinstance(hash_value, str)
-    assert len(hash_value) == 32  # MD5 hex length
-
 def test_save_json_load_json(tmp_path):
     """Test saving and loading JSON."""
     data = {"test": "value"}
@@ -185,17 +179,6 @@ def test_save_json_load_json(tmp_path):
     save_json(data, json_path, "test data")
     loaded = load_json(json_path, "test data")
     assert loaded == data
-
-def test_is_documentation_file():
-    """Test documentation file detection."""
-    assert is_documentation_file(Path("README.md")) == True
-    assert is_documentation_file(Path("example.py")) == False
-
-def test_read_file_in_chunks(sample_python_file):
-    """Test reading file in chunks."""
-    chunks = list(read_file_in_chunks(sample_python_file))
-    full_content = sample_python_file.read_text()
-    assert ''.join(chunks) == full_content
 
 class TestFileProcessor:
     def test_chunk_python_file(self, sample_python_file, tmp_path):

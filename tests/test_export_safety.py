@@ -128,7 +128,7 @@ def test_git_discovery_from_source_subdirectory(tmp_path, linked):
 
 
 @pytest.mark.parametrize("contained", [False, True])
-def test_git_discovery_with_explicit_worktree(tmp_path, monkeypatch, contained):
+def test_git_discovery_with_explicit_worktree(tmp_path, monkeypatch, caplog, contained):
     repo, output = source(tmp_path)
     metadata = tmp_path / "metadata"
     subprocess.run(["git", "init", "-q", "--bare", str(metadata)], check=True)
@@ -141,44 +141,48 @@ def test_git_discovery_with_explicit_worktree(tmp_path, monkeypatch, contained):
     (nested / "included.py").write_text("INCLUDED = True\n")
     (nested / "excluded.py").write_text("EXCLUDED = True\n")
     processor = RepoContentProcessor(nested, output)
-    if not contained:
-        with pytest.raises(RuntimeError, match="outside Git worktree"):
-            processor.process_repo()
-        assert not snapshot(output)
-        return
-
     processor.process_repo()
-    assert [item["path"] for item in processor.metadata["processed_files"]] == ["included.py"]
+    paths = [item["path"] for item in processor.metadata["processed_files"]]
+    if contained:
+        assert paths == ["included.py"]
+    else:
+        assert paths == ["excluded.py", "included.py"]
+        assert "falling back to directory walk" in caplog.text
+        assert "outside Git worktree" in caplog.text
 
 
-@pytest.mark.parametrize("nested", [False, True])
-def test_damaged_git_worktree_preserves_previous_export(tmp_path, nested):
+@pytest.mark.parametrize("marker", ["invalid gitfile", "empty ancestor", "mismatched worktree"])
+def test_damaged_git_worktree_uses_directory_walk(tmp_path, caplog, marker):
     repo, output = source(tmp_path)
-    RepoContentProcessor(repo, output).process_repo()
-    before = snapshot(output)
-    (repo / "app.py").write_text("CHANGED = True\n")
-    if nested:
+    if marker == "mismatched worktree":
         subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
         (repo / ".git").mkdir()
         diagnostic = f"Git reported worktree {tmp_path.resolve()} but expected {repo.resolve()}"
+    elif marker == "empty ancestor":
+        (tmp_path / ".git").mkdir()
+        diagnostic = "rev-parse --show-toplevel failed"
     else:
         (repo / ".git").write_text("gitdir: missing-git-dir\n")
         result = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"], capture_output=True)
         assert result.returncode != 0 and result.stderr
         diagnostic = os.fsdecode(result.stderr).strip()
-    with pytest.raises(RuntimeError) as error:
-        RepoContentProcessor(repo, output).process_repo()
-    assert diagnostic in str(error.value)
-    assert snapshot(output) == before
+    processor = RepoContentProcessor(repo, output)
+    processor.process_repo()
+    assert "falling back to directory walk" in caplog.text
+    assert diagnostic in caplog.text
+    assert [item["path"] for item in processor.metadata["processed_files"]] == ["app.py"]
 
 
 @pytest.mark.parametrize("failure", ["missing", "--ignored", "--cached"])
-def test_git_command_failure_preserves_previous_export(tmp_path, monkeypatch, failure):
+def test_git_command_failure_uses_directory_walk(tmp_path, monkeypatch, caplog, failure):
     repo, output = source(tmp_path)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     RepoContentProcessor(repo, output).process_repo()
-    before = snapshot(output)
     (repo / "app.py").write_text("CHANGED = True\n")
+    (repo / ".gitignore").write_text("ignored.py\n")
+    (repo / "ignored.py").write_text("IGNORED = True\n")
+    (repo / ".git/info/exclude").write_text("git-only.py\n")
+    (repo / "git-only.py").write_text("WALKED = True\n")
     run = subprocess.run
 
     def failing_git(args, **kwargs):
@@ -190,9 +194,75 @@ def test_git_command_failure_preserves_previous_export(tmp_path, monkeypatch, fa
 
     monkeypatch.setattr(subprocess, "run", failing_git)
     expected = "git executable is missing" if failure == "missing" else "fatal: injected index read failure"
-    with pytest.raises((FileNotFoundError, RuntimeError), match=expected):
-        RepoContentProcessor(repo, output).process_repo()
+    processor = RepoContentProcessor(repo, output)
+    processor.process_repo()
+    assert "falling back to directory walk" in caplog.text
+    assert expected in caplog.text
+    assert {item["path"] for item in processor.metadata["processed_files"]} == {
+        ".gitignore", "app.py", "git-only.py"}
+    assert not any(item["path"] == "git-only.py" for item in processor.metadata["skipped_files"])
+    assert "CHANGED = True" in (output / "python/chunk_0.md").read_text()
+
+
+@pytest.mark.parametrize("offset", [0, 2047, 4096])
+def test_invalid_utf8_is_a_failure_until_explicitly_skipped(tmp_path, offset):
+    repo, output = source(tmp_path)
+    RepoContentProcessor(repo, output).process_repo()
+    before = snapshot(output)
+    content = b"a" * offset + b"\xff"
+    (repo / "legacy.txt").write_bytes(content)
+    with pytest.raises(UnicodeDecodeError) as decode_error:
+        content.decode("utf-8")
+
+    processor = RepoContentProcessor(repo, output)
+    with pytest.raises(RuntimeError, match="Source processing failed"):
+        processor.process_repo()
+    assert processor.metadata["failed_files"] == [
+        {"path": "legacy.txt", "reason": str(decode_error.value)}]
     assert snapshot(output) == before
+
+    processor = RepoContentProcessor(repo, output, skip_patterns=["legacy.txt"])
+    processor.process_repo()
+    assert processor.metadata["failed_files"] == []
+    assert any(item["path"] == "legacy.txt" for item in processor.metadata["skipped_files"])
+
+
+@pytest.mark.parametrize("ignore", [".gitignore", ".dockerignore"])
+def test_legacy_ignore_file_can_be_excluded_from_export(tmp_path, ignore):
+    repo, output = source(tmp_path)
+    (repo / ignore).write_bytes(b"# legacy \xff\nignored.py\n")
+    (repo / "ignored.py").write_text("IGNORED = True\n", encoding="utf-8")
+
+    processor = RepoContentProcessor(repo, output)
+    with pytest.raises(RuntimeError, match="Source processing failed"):
+        processor.process_repo()
+    assert [item["path"] for item in processor.metadata["failed_files"]] == [ignore]
+
+    processor = RepoContentProcessor(repo, output, skip_patterns=[ignore])
+    processor.process_repo()
+    assert [item["path"] for item in processor.metadata["processed_files"]] == ["app.py"]
+
+
+def test_opt_in_secret_scan_checks_reused_source_before_publishing(tmp_path, caplog):
+    repo, output = source(tmp_path)
+    sentinel = "-----BEGIN PRIVATE KEY-----"
+    (repo / "example.txt").write_bytes(f"example fixture\r{sentinel}\r".encode("utf-8"))
+    runner = CliRunner()
+    args = ["process-repo", "--config-file", str(tmp_path / "missing.yaml"),
+            "--repo-path", str(repo), "--output-dir", str(output)]
+    initial = runner.invoke(app, args)
+    assert initial.exit_code == 0, initial.output
+    before = snapshot(output)
+
+    blocked = runner.invoke(app, [*args, "--scan-secrets"])
+    assert blocked.exit_code == 1
+    assert "detect-secrets flagged 'example.txt' at line 2" in blocked.output
+    assert sentinel not in blocked.output and sentinel not in caplog.text
+    assert snapshot(output) == before
+
+    clean = runner.invoke(app, [*args, "--scan-secrets", "--skip-patterns", "example.txt"])
+    assert clean.exit_code == 0, clean.output
+    assert not (output / "other/chunk_0.md").exists()
 
 
 @pytest.mark.parametrize("cpus, expected", [(64, 61), (2, 2)])

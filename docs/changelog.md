@@ -5,6 +5,19 @@ All notable changes to Pyragify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-11-20
+
+- Fall back to directory walking with a warning when Git discovery fails.
+  Validate selected files as UTF-8 and report decoding errors before publication.
+- Rebuild cache records with invalid source line ranges. Include the callee file
+  in hierarchy results and resolve the default graph query path from configuration.
+- Install `pyragify[graph]` to build graphs. Base installations can still
+  export source and query graph JSON. The optional `pyragify[scan]` extra
+  enables a pre-publication detect-secrets check.
+- Document a paired chat evaluation of raw files and a Pyragify handoff.
+- Remove the unused `load_yaml_config`, `is_documentation_file`,
+  `read_file_in_chunks`, and `compute_file_hash` helpers.
+
 ## [0.5.6] — 2026-11-18
 
 ### Changed

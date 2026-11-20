@@ -5,6 +5,8 @@ This module provides functionality to build and manage knowledge graphs
 representing code relationships and dependencies.
 """
 
+from __future__ import annotations
+
 import ast
 import json
 import logging
@@ -12,18 +14,12 @@ import re
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from functools import cache
+from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
-from tree_sitter import Language, Node, Parser, Query, QueryCursor
-import tree_sitter_c
-import tree_sitter_cpp
-import tree_sitter_css
-import tree_sitter_go
-import tree_sitter_html
-import tree_sitter_java
-import tree_sitter_javascript
-import tree_sitter_typescript
+if TYPE_CHECKING:
+    from tree_sitter import Language, Node, Parser
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +31,7 @@ FUNCTION_NODE_TYPES = {
     "cpp_function",
     "go_function",
 }
+_TREE_SITTER_LANGUAGES = ("javascript", "typescript", "java", "c", "cpp", "go", "html", "css")
 
 
 def is_function_like_node(node: "GraphNode") -> bool:
@@ -42,23 +39,32 @@ def is_function_like_node(node: "GraphNode") -> bool:
 
 
 @cache
+def _require_graph_extra() -> None:
+    try:
+        import_module("tree_sitter")
+        for language in _TREE_SITTER_LANGUAGES:
+            import_module(f"tree_sitter_{language}")
+    except ImportError as error:
+        raise RuntimeError("Building graphs requires `pyragify[graph]`. "
+                           "Install the extra or rerun with --no-enable-graph.") from error
+
+
+@cache
 def _load_tree_sitter_language(language_name: str) -> Language:
     """Load each immutable grammar once per process."""
-    factories = {
-        "javascript": tree_sitter_javascript.language,
-        "typescript": tree_sitter_typescript.language_typescript,
-        "java": tree_sitter_java.language,
-        "c": tree_sitter_c.language,
-        "cpp": tree_sitter_cpp.language,
-        "go": tree_sitter_go.language,
-        "html": tree_sitter_html.language,
-        "css": tree_sitter_css.language,
-    }
-    return Language(factories[language_name]())
+    from tree_sitter import Language
+
+    if language_name not in _TREE_SITTER_LANGUAGES:
+        raise KeyError(language_name)
+    grammar = import_module(f"tree_sitter_{language_name}")
+    factory = grammar.language_typescript if language_name == "typescript" else grammar.language
+    return Language(factory())
 
 
 def get_tree_sitter_language_and_parser(language_name: str) -> Tuple[Language, Parser]:
     """Return the shared grammar and a fresh parser for an analysis."""
+    from tree_sitter import Parser
+
     language = _load_tree_sitter_language(language_name)
     return language, Parser(language)
 
@@ -886,6 +892,8 @@ class GraphBuilder:
         file_id = self._file_node_id(file_path)
 
         try:
+            from tree_sitter import Query, QueryCursor
+
             language_name = "cpp" if file_path.suffix == ".cpp" else "c"
             language, parser = get_tree_sitter_language_and_parser(language_name)
             tree = parser.parse(bytes(content, "utf8"))
@@ -1001,6 +1009,8 @@ class GraphBuilder:
         file_id = self._file_node_id(file_path)
 
         try:
+            from tree_sitter import Query, QueryCursor
+
             language, parser = get_tree_sitter_language_and_parser("java")
             tree = parser.parse(bytes(content, "utf8"))
             root_node = tree.root_node
@@ -1189,6 +1199,8 @@ class GraphBuilder:
         file_id = self._file_node_id(file_path)
 
         try:
+            from tree_sitter import Query, QueryCursor
+
             language_name = "typescript" if file_path.suffix == ".ts" else "javascript"
             language, parser = get_tree_sitter_language_and_parser(language_name)
             tree = parser.parse(bytes(content, "utf8"))
@@ -1700,6 +1712,7 @@ class GraphQuery:
                         callee_name = callee_node.name if callee_node else callee_id.split("::")[-1]
                         hierarchy["callees"].append({
                             "name": callee_name,
+                            "file": callee_node.file if callee_node else None,
                             "line": edge.metadata.get("line")
                         })
 

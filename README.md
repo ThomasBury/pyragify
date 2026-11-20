@@ -29,13 +29,13 @@ Review the selected source for secrets before sharing.
 
 Python **3.12** is required (`>=3.12,<3.13`). Install
 [uv](https://docs.astral.sh/uv/getting-started/installation/), then install
-Pyragify from PyPI in a virtual environment:
+Pyragify in a virtual environment using the GitHub release wheel:
 
 ```bash
 uv venv --python 3.12 pyragify-env
 source pyragify-env/bin/activate  # Linux/macOS
 # Windows PowerShell: pyragify-env\Scripts\Activate.ps1
-uv pip install "pyragify>=0.5.3"
+uv pip install "https://github.com/ThomasBury/pyragify/releases/download/0.6.0/pyragify-0.6.0-py3-none-any.whl"
 ```
 
 With the environment activated, replace `./my-project` with your source directory
@@ -144,7 +144,7 @@ Install Pyragify in the **consuming project's Python 3.12 environment** so
 skills. From that project's root, install Pyragify and both skills:
 
 ```bash
-uv add --dev "pyragify>=0.5.3"
+uv add --dev "pyragify[graph] @ https://github.com/ThomasBury/pyragify/releases/download/0.6.0/pyragify-0.6.0-py3-none-any.whl"
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
 uvx library-skills list --installed
 ```
@@ -162,6 +162,8 @@ that directory, try one of these requests:
 Replace `hello_world` with a function in your repository. See the
 [agent installation guide](https://thomasbury.github.io/pyragify/getting-started/installation/#agent-skills)
 for broader Python compatibility, installation targets, and upgrades.
+For the export skill alone, drop `[graph]` from the install command and
+select only `pyragify-export`.
 
 ## Good to know
 
@@ -175,6 +177,7 @@ for broader Python compatibility, installation targets, and upgrades.
 
 - [Configuration and selection rules](https://thomasbury.github.io/pyragify/getting-started/configuration/)
 - [Output contract](https://thomasbury.github.io/pyragify/user-guide/output-formats/)
+- [Chat ingestion evaluation](docs/user-guide/ingestion-evaluation.md)
 - [CLI reference](https://thomasbury.github.io/pyragify/user-guide/cli-reference/)
 - [Graph guide](https://thomasbury.github.io/pyragify/user-guide/knowledge-graph/)
 - [Contributing](https://thomasbury.github.io/pyragify/contributing/)

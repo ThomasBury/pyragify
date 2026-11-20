@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from pyragify.cli import app
@@ -145,6 +146,38 @@ def test_query_graph_invalid_command_does_not_echo_exit_code(tmp_path):
     assert result.exit_code == 1
     assert "Unknown command 'unknown'" in result.output
     assert "Error: 1" not in result.output
+
+
+@pytest.mark.parametrize("config_name", ["config.yaml", "custom.yaml"])
+@pytest.mark.parametrize("graph_dir", ["custom-graphs", "../external-graphs"])
+def test_query_graph_resolves_configured_output(tmp_path, monkeypatch, config_name, graph_dir):
+    monkeypatch.chdir(tmp_path)
+    repo = tmp_path / "source"
+    repo.mkdir()
+    (repo / "app.py").write_text("def run(): pass\n", encoding="utf-8")
+    config_path = tmp_path / config_name
+    config_path.write_text(
+        "repo_path: source\noutput_dir: export\ngraph:\n"
+        f"  enabled: true\n  output_dir: {graph_dir}\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    export = runner.invoke(app, ["process-repo", "--config-file", config_name])
+    assert export.exit_code == 0, export.output
+    manifest = json.loads((tmp_path / "export/metadata.json").read_text(encoding="utf-8"))
+    assert manifest["graph"]["output_path"] == f"{graph_dir}/repository_graph.json"
+
+    options = ["--config-file", config_name] if config_name != "config.yaml" else []
+    query = runner.invoke(app, ["query-graph", "--command", "stats", *options])
+    assert query.exit_code == 0, query.output
+    assert json.loads(query.output)["total_nodes"] == 2
+
+    # An explicit graph path takes priority even when the config cannot be parsed.
+    config_path.write_text("[invalid YAML", encoding="utf-8")
+    query = runner.invoke(app, ["query-graph", "--command", "stats",
+                                "--graph-path", f"export/{graph_dir}/repository_graph.json",
+                                "--config-file", config_name])
+    assert query.exit_code == 0, query.output
 
 
 def test_query_graph_invalid_regex_fails(tmp_path):

@@ -83,7 +83,7 @@ def test_parser_failure_retains_complete_source(tmp_path, monkeypatch, caplog, f
         raise ValueError('injected graph extraction failure')
 
     target = {'loader': 'pyragify.processor.get_tree_sitter_language_and_parser',
-              'query': 'pyragify.processor.Query',
+              'query': 'tree_sitter.Query',
               'graph': 'pyragify.graph.GraphBuilder.build_from_chunks'}[failure]
     monkeypatch.setattr(target, fail)
     processor = FileProcessor(tmp_path, tmp_path / 'output', enable_graph=True)
@@ -120,7 +120,8 @@ def test_universal_newline_ranges_preserve_bytes(tmp_path, source, expected_line
     assert f"lines {start}-{expected_lines};" in (output / "index.md").read_text()
 
 
-def test_previous_cache_with_incorrect_line_range_is_reprocessed(tmp_path):
+@pytest.mark.parametrize("field", ["version", "start_line", "end_line", "lines", "missing", "surrogate"])
+def test_cache_with_invalid_line_range_or_content_is_reprocessed(tmp_path, field):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "app.py").write_bytes(b"a = 1\rb = 2")
@@ -128,9 +129,18 @@ def test_previous_cache_with_incorrect_line_range_is_reprocessed(tmp_path):
     RepoContentProcessor(repo, output).process_repo()
     path = output / ".pyragify-cache.json"
     cache = json.loads(path.read_text())
-    cache["version"] = 4
-    cache["files"]["app.py"]["metadata"]["lines"] = 1
-    cache["files"]["app.py"]["chunks"][0]["end_line"] = 1
+    record = cache["files"]["app.py"]
+    chunk = record["chunks"][0]
+    if field == "version":
+        cache["version"] = 4
+    elif field == "lines":
+        record["metadata"]["lines"] = 1
+    elif field == "missing":
+        del chunk["end_line"]
+    elif field == "surrogate":
+        chunk["content"] = "\ud800"
+    else:
+        chunk[field] = 0
     path.write_text(json.dumps(cache))
     RepoContentProcessor(repo, output).process_repo()
     manifest = check_handoff(repo, output)
@@ -227,7 +237,7 @@ def test_invalid_word_limit_does_not_create_output(tmp_path, limit):
     assert not (tmp_path / "output").exists()
 
 
-def test_oversized_source_fails_cli_and_preserves_prior_export(tmp_path, caplog):
+def test_oversized_source_fails_cli_and_preserves_prior_export(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "text.txt").write_text("original\n")
@@ -238,7 +248,7 @@ def test_oversized_source_fails_cli_and_preserves_prior_export(tmp_path, caplog)
     result = CliRunner().invoke(app, ["process-repo", "--config-file", str(tmp_path / "missing"),
                                     "--repo-path", str(repo), "--output-dir", str(output), "--max-words", "20"])
     assert result.exit_code == 1
-    assert "including headers" in caplog.text
+    assert "including headers" in result.output
     assert before == {p.relative_to(output): p.read_bytes() for p in output.rglob("*") if p.is_file()}
 
 

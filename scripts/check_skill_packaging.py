@@ -91,6 +91,7 @@ def exercise_skills(consumer):
     assert set(results) == {"stats", "search", "hierarchy", "related", "dependencies"}
     assert any(node["id"] == "app.py::run" for node in results["search"]["results"])
     assert [node["name"] for node in results["hierarchy"]["callees"]] == ["helper"]
+    assert results["hierarchy"]["callees"][0]["file"] == "helper.py"
     assert results["dependencies"]["dependencies"] == ["helper.py"]
     assert any(item["node"]["id"] == "helper.py::helper" for item in results["related"]["results"])
 
@@ -105,6 +106,30 @@ def check_consumer(consumer, package, version, expected, *, editable=False):
         encoding="utf-8",
     )
     run("uv", "add", "--dev", *(["--editable"] if editable else []), str(package), cwd=consumer)
+    run("uv", "run", "python", "-c",
+        "from importlib.util import find_spec; "
+        "assert all(find_spec(name) is None for name in ('tree_sitter', 'detect_secrets'))",
+        cwd=consumer)
+    base_repo = consumer / "base-repo"
+    base_repo.mkdir()
+    (base_repo / "app.js").write_text("function run() {}\n", encoding="utf-8")
+    run("uv", "run", "pyragify", "process-repo", "--repo-path", "base-repo", cwd=consumer)
+    assert (consumer / "output/javascript/chunk_0.md").is_file()
+    (consumer / "existing.json").write_text('{"nodes": {}, "edges": []}', encoding="utf-8")
+    stats = run("uv", "run", "pyragify", "query-graph", "--graph-path", "existing.json",
+                "--command", "stats", cwd=consumer)
+    assert json.loads(stats)["total_nodes"] == 0
+    for option, extra in (("--enable-graph", "graph"), ("--scan-secrets", "scan")):
+        try:
+            run("uv", "run", "pyragify", "process-repo", "--repo-path", "base-repo",
+                option, cwd=consumer)
+        except RuntimeError as error:
+            assert f"requires `pyragify[{extra}]`" in str(error)
+        else:
+            raise AssertionError(f"{option} unexpectedly succeeded in a base install")
+
+    run("uv", "add", "--dev", "--extra", "graph", *(["--editable"] if editable else []),
+        str(package), cwd=consumer)
     scan = json.loads(run(*LIBRARY_SKILLS, "scan", "--json", cwd=consumer))
     assert Path(scan["target_environment"]).resolve() == (consumer / ".venv").resolve(), scan
     skills = {item["name"]: item for item in scan["skills"] if item["package"] == "pyragify"}

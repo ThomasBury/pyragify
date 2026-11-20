@@ -99,6 +99,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f1/2a/8c3ac3d8bc94e6de8d7ae270bb5bc437b210bb9d6d9e46630c98f4abd20c/csscompressor-0.9.5.tar.gz", hash = "sha256:afa22badbcf3120a4f392e4d22f9fff485c044a1feda4a950ecc5eba9dd31a05", size = 237808, upload-time = "2017-11-26T21:13:08.238Z" }
 
 [[package]]
+name = "detect-secrets"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/69/67/382a863fff94eae5a0cf05542179169a1c49a4c8784a9480621e2066ca7d/detect_secrets-1.5.0.tar.gz", hash = "sha256:6bb46dcc553c10df51475641bb30fd69d25645cc12339e46c824c1e0c388898a", size = 97351, upload-time = "2024-05-06T17:46:19.721Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/5e/4f5fe4b89fde1dc3ed0eb51bd4ce4c0bca406246673d370ea2ad0c58d747/detect_secrets-1.5.0-py3-none-any.whl", hash = "sha256:e24e7b9b5a35048c313e983f76c4bd09dad89f045ff059e354f9943bf45aa060", size = 120341, upload-time = "2024-05-06T17:46:16.628Z" },
+]
+
+[[package]]
 name = "editorconfig"
 version = "0.17.1"
 source = { registry = "https://pypi.org/simple" }
@@ -503,12 +516,16 @@ wheels = [
 
 [[package]]
 name = "pyragify"
-version = "0.5.6"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "omegaconf" },
     { name = "pathspec" },
-    { name = "pyyaml" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+graph = [
     { name = "tree-sitter" },
     { name = "tree-sitter-c" },
     { name = "tree-sitter-cpp" },
@@ -518,11 +535,14 @@ dependencies = [
     { name = "tree-sitter-java" },
     { name = "tree-sitter-javascript" },
     { name = "tree-sitter-typescript" },
-    { name = "typer" },
+]
+scan = [
+    { name = "detect-secrets" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "pyragify", extra = ["graph", "scan"] },
     { name = "pytest" },
     { name = "pytest-mock" },
 ]
@@ -539,23 +559,25 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "detect-secrets", marker = "extra == 'scan'", specifier = "==1.5.0" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "pathspec", specifier = ">=0.12.1" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "tree-sitter", specifier = "==0.26.1" },
-    { name = "tree-sitter-c", specifier = "==0.24.2" },
-    { name = "tree-sitter-cpp", specifier = "==0.23.4" },
-    { name = "tree-sitter-css", specifier = "==0.25.0" },
-    { name = "tree-sitter-go", specifier = "==0.25.0" },
-    { name = "tree-sitter-html", specifier = "==0.23.2" },
-    { name = "tree-sitter-java", specifier = "==0.23.5" },
-    { name = "tree-sitter-javascript", specifier = "==0.25.0" },
-    { name = "tree-sitter-typescript", specifier = "==0.23.2" },
+    { name = "tree-sitter", marker = "extra == 'graph'", specifier = "==0.26.1" },
+    { name = "tree-sitter-c", marker = "extra == 'graph'", specifier = "==0.24.2" },
+    { name = "tree-sitter-cpp", marker = "extra == 'graph'", specifier = "==0.23.4" },
+    { name = "tree-sitter-css", marker = "extra == 'graph'", specifier = "==0.25.0" },
+    { name = "tree-sitter-go", marker = "extra == 'graph'", specifier = "==0.25.0" },
+    { name = "tree-sitter-html", marker = "extra == 'graph'", specifier = "==0.23.2" },
+    { name = "tree-sitter-java", marker = "extra == 'graph'", specifier = "==0.23.5" },
+    { name = "tree-sitter-javascript", marker = "extra == 'graph'", specifier = "==0.25.0" },
+    { name = "tree-sitter-typescript", marker = "extra == 'graph'", specifier = "==0.23.2" },
     { name = "typer", specifier = ">=0.15.1" },
 ]
+provides-extras = ["graph", "scan"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pyragify", extras = ["graph", "scan"] },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-mock", specifier = ">=3.0.0" },
 ]

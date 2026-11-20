@@ -5,7 +5,8 @@ description: Build and query Pyragify's experimental code graph to find candidat
 
 # Explore an experimental code graph
 
-Use a project environment with Python 3.12 and `pyragify` installed. Select the
+Use a project environment with Python 3.12. Install `pyragify[graph]` to build
+graphs. The base package can query existing graph JSON. Select the
 source root explicitly and use dedicated output paths without symlinks. Output
 must not equal or contain the source root; keep unrelated files elsewhere and
 avoid concurrent exports. Graph relationships can be incomplete or wrong. Query
