@@ -9,9 +9,10 @@ Imports, decorators, async definitions, constants, comments, whitespace, and
 Unicode are copied verbatim. Malformed code is retained too. Empty files have
 source range `0–0`; nonempty files use one-based inclusive line ranges.
 
-Binary or non-UTF-8 files, symlinks, ignored paths, and sources above
-`max_file_size` are excluded and reported. Source decoding failures after the
-binary sample abort publication. A whole source file that cannot fit
+Files containing NUL bytes, symlinks, ignored paths, and sources above
+`max_file_size` are excluded and reported. A UTF-8 decoding failure in a
+selected file aborts publication. Use `skip_patterns` for intentional
+exclusions. A whole source file that cannot fit
 `max_words`, including formatting, fails rather than being truncated or omitted.
 See [selection rules](../getting-started/configuration.md) and
 [output details](output-formats.md).
@@ -24,7 +25,7 @@ HTML/CSS extraction. These can omit symbols and relationships. The manifest
 reports that limitation when graphs are enabled. A failed parser cannot remove
 source from the readable handoff.
 
-Official Tree-sitter bindings and the eight individual grammar packages are
-installed at pinned compatible versions on Python 3.12. Repository
+The `pyragify[graph]` extra installs the official Tree-sitter bindings and eight
+grammar packages at pinned versions on Python 3.12. Repository
 development uses `uv sync --locked`; do not upgrade the parser independently of
 the declared dependency constraints. See the [graph guide](knowledge-graph.md).

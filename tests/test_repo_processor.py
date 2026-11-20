@@ -188,7 +188,7 @@ def test_graph_output_keeps_dependency_edges_and_metadata(tmp_path):
     assert any(edge["type"] == "calls" for edge in graph["edges"])
     assert graph["metadata"]["total_edges"] == len(graph["edges"])
     assert "graph" in metadata
-    assert metadata["graph"]["output_path"].endswith("repository_graph.json")
+    assert metadata["graph"]["output_path"] == "graphs/repository_graph.json"
     assert all(edge["source"] in graph["nodes"] for edge in graph["edges"])
     assert all(edge["target"] in graph["nodes"] for edge in graph["edges"])
 

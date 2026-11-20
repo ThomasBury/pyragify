@@ -60,6 +60,8 @@ def test_explicit_imports_resolve_exact_functions(tmp_path, prefix, statement, e
                and edge.target == "file::" + prefix + dependency for edge in graph.edges)
     assert GraphQuery(graph).get_call_hierarchy(prefix + target + "::run")["callers"] == [
         {"name": "caller", "file": app, "line": 3}]
+    assert GraphQuery(graph).get_call_hierarchy(app + "::caller")["callees"] == [
+        {"name": "run", "file": prefix + target, "line": 3}]
     related = GraphQuery(graph).find_related_context(app + "::caller", 1, ["calls"])
     assert [item.node.id for item in related] == [prefix + target + "::run"]
 

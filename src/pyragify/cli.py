@@ -28,6 +28,10 @@ def _plain_dict(config: Any) -> dict[str, Any]:
     return dict(config)
 
 
+def _output_dir(config: Any) -> Path:
+    return Path(_config_value(config, "output_dir", "./output") or "./output")
+
+
 @app.command()
 def process_repo(
     config_file: Path = typer.Option("config.yaml", help="Path to the configuration YAML file."),
@@ -41,7 +45,8 @@ def process_repo(
     enable_graph: bool = typer.Option(None, help="Override: Enable experimental graph output (outside the source handoff)."),
     graph_output_dir: str = typer.Option(None, help="Override: Directory to save graph files."),
     graph_format: str = typer.Option(None, help="Override: Graph serialization format (only json is supported)."),
-    include_relationships: list[str] = typer.Option(None, help="Unsupported: relationship filtering is not implemented.")
+    include_relationships: list[str] = typer.Option(None, help="Unsupported: relationship filtering is not implemented."),
+    scan_secrets: bool = typer.Option(None, help="Block publication if detect-secrets flags selected source."),
 ) -> None:
     """
     Export complete UTF-8 source, a Markdown index, and metadata.json.
@@ -106,6 +111,7 @@ def process_repo(
         "skip_patterns": skip_patterns,
         "skip_dirs": skip_dirs,
         "verbose": verbose,
+        "scan_secrets": scan_secrets,
     }
     for key, value in overrides.items():
         if value is not None:
@@ -147,11 +153,11 @@ def process_repo(
 
     processor_kwargs = {
         "repo_path": repo_path_obj,
-        "output_dir": Path(_config_value(config, "output_dir", "./output") or "./output"),
+        "output_dir": _output_dir(config),
         "enable_graph": graph_config.get("enabled", False),
         "graph_config": graph_config,
     }
-    for key in ("max_words", "max_file_size", "skip_patterns", "skip_dirs"):
+    for key in ("max_words", "max_file_size", "skip_patterns", "skip_dirs", "scan_secrets"):
         value = _config_value(config, key)
         if value is not None:
             processor_kwargs[key] = value
@@ -162,7 +168,7 @@ def process_repo(
         processor.process_repo()
         logger.info("Repository processing completed successfully!")
     except Exception as e:
-        logger.error(f"An error occurred during repository processing: {e}")
+        typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
 
 @app.command()
@@ -172,7 +178,8 @@ def query_graph(
     entity: str = typer.Option(None, help="Entity ID or name for queries."),
     depth: int = typer.Option(2, help="Traversal depth for related context."),
     pattern: str = typer.Option(None, help="Search pattern for pattern matching."),
-    output_format: str = typer.Option("json", help="Output format (json, text).")
+    output_format: str = typer.Option("json", help="Output format (json, text)."),
+    config_file: Path = typer.Option("config.yaml", help="Configuration YAML for the default graph path."),
 ) -> None:
     """
     Query the knowledge graph for context and relationships.
@@ -191,22 +198,16 @@ def query_graph(
         python -m pyragify.cli query-graph --graph-path output/graphs/repository_graph.json --command search --pattern "function"
     """
 
-    # Load the knowledge graph
-    if not graph_path:
-        # Try to find the default graph
-        default_graph = Path("output/graphs/repository_graph.json")
-        if default_graph.exists():
-            graph_path = default_graph
-        else:
-            typer.echo("Error: No graph path provided and default graph not found.", err=True)
-            raise typer.Exit(1)
-
-    if not graph_path.exists():
-        typer.echo(f"Error: Graph file '{graph_path}' not found.", err=True)
-        raise typer.Exit(1)
-
     try:
         from pyragify.graph import KnowledgeGraph, GraphQuery
+
+        if graph_path is None:
+            config = OmegaConf.load(config_file) if config_file.exists() else {}
+            graph_config = _plain_dict(_config_value(config, "graph", {}))
+            graph_path = _output_dir(config) / graph_config.get("output_dir", "graphs") / "repository_graph.json"
+        if not graph_path.exists():
+            typer.echo(f"Error: Graph file '{graph_path}' not found.", err=True)
+            raise typer.Exit(1)
 
         # Load graph
         graph = KnowledgeGraph.from_dict(load_json(graph_path, "graph"))
@@ -256,7 +257,7 @@ def query_graph(
                 typer.echo(f"Call hierarchy for {entity}:")
                 typer.echo(f"  Locations: {results['locations']}")
                 typer.echo(f"  Callers: {[c['name'] for c in results['callers']]}")
-                typer.echo(f"  Callees: {[c['name'] for c in results['callees']]}")
+                typer.echo(f"  Callees: {results['callees']}")
 
         elif command == "dependencies":
             if not entity:

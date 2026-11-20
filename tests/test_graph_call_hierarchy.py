@@ -25,7 +25,7 @@ def test_python_call_hierarchy_uses_calling_function_node(tmp_path):
     assert foo_hierarchy["callers"] == [{"name": "bar", "file": "a.py", "line": 5}]
 
     bar_hierarchy = GraphQuery(graph).get_call_hierarchy("bar")
-    assert bar_hierarchy["callees"] == [{"name": "foo", "line": 5}]
+    assert bar_hierarchy["callees"] == [{"name": "foo", "file": "a.py", "line": 5}]
 
 
 
@@ -48,7 +48,7 @@ def _assert_bar_calls_foo(graph, filename, call_line, scope=""):
     assert foo_hierarchy["callers"] == [{"name": "bar", "file": filename, "line": call_line}]
 
     bar_hierarchy = GraphQuery(graph).get_call_hierarchy("bar")
-    assert bar_hierarchy["callees"] == [{"name": "foo", "line": call_line}]
+    assert bar_hierarchy["callees"] == [{"name": "foo", "file": filename, "line": call_line}]
 
 
 def test_javascript_call_hierarchy_uses_calling_function_node(tmp_path):

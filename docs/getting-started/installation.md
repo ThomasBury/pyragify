@@ -7,12 +7,16 @@ This guide will help you install Pyragify on your system.
 - **Python**: Version 3.12 only (`>=3.12,<3.13`)
 - **Operating System**: Linux, macOS, or Windows
 
+Python 3.12 is the compatibility target exercised in CI for the pinned native
+parser stack and the packaged skills. Both base and graph installs declare the
+same range while testing and releases target that interpreter.
+
 ## Installation Methods
 
-### Method 1: PyPI with uv (recommended)
+### Method 1: GitHub release wheel with uv (recommended)
 
 Use [uv](https://docs.astral.sh/uv/pip/environments/) to create and activate a
-Python 3.12 virtual environment, then install Pyragify from PyPI:
+Python 3.12 virtual environment, then install the Pyragify release wheel:
 
 ```bash
 # Install uv if you don't have it
@@ -21,11 +25,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv --python 3.12 pyragify-env
 source pyragify-env/bin/activate  # Linux/macOS
 # Windows PowerShell: pyragify-env\Scripts\Activate.ps1
-uv pip install "pyragify>=0.5.3"
+uv pip install "https://github.com/ThomasBury/pyragify/releases/download/0.6.0/pyragify-0.6.0-py3-none-any.whl"
 pyragify --help
 ```
 
-### Method 2: PyPI with pip
+### Method 2: GitHub release wheel with pip
 
 With Python 3.12 installed:
 
@@ -34,7 +38,7 @@ python3.12 -m venv pyragify-env  # Linux/macOS
 # Windows: py -3.12 -m venv pyragify-env
 source pyragify-env/bin/activate  # Linux/macOS
 # Windows PowerShell: pyragify-env\Scripts\Activate.ps1
-python -m pip install "pyragify>=0.5.3"
+python -m pip install "https://github.com/ThomasBury/pyragify/releases/download/0.6.0/pyragify-0.6.0-py3-none-any.whl"
 pyragify --help
 ```
 
@@ -56,21 +60,21 @@ python -m pip install -e .
 
 ## Agent skills
 
-Pyragify 0.5.3 bundles two self-contained skills:
+Pyragify bundles two self-contained skills:
 `pyragify-export` covers source-only exports and manifest inspection;
 `pyragify-graph` covers experimental graph export and queries with source checks.
-From a consuming project using Python 3.12, install Pyragify from PyPI and
-install both skills:
+From a consuming project using Python 3.12, install the release wheel with
+the graph extra, then install both skills:
 
 ```bash
-uv add --dev "pyragify>=0.5.3"
+uv add --dev "pyragify[graph] @ https://github.com/ThomasBury/pyragify/releases/download/0.6.0/pyragify-0.6.0-py3-none-any.whl"
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
 uvx library-skills scan --json
 ```
 
-If you previously added a GitHub release wheel, remove the `pyragify` entry
-from `[tool.uv.sources]` in `pyproject.toml` before running the commands above.
-That entry pins the project to the wheel URL.
+For the export skill alone, drop `[graph]` from the install command and select
+only `pyragify-export` in the Library Skills command. uv records the wheel URL
+in `[tool.uv.sources]`. Run `uv add` with a newer wheel URL when upgrading.
 
 The `uv add` command assumes the consuming project's declared `requires-python` is
 `>=3.12,<3.13`. uv resolves against that entire range, not just the interpreter
@@ -119,9 +123,8 @@ uvx library-skills scan --all --json
 uvx library-skills install --skill pyragify-export --skill pyragify-graph
 ```
 
-`--all` includes the checkout package itself, which is not one of its own
-declared dependencies. In a consuming project, the default scan includes
-Pyragify because it is a declared dependency.
+`--all` includes the checkout package itself. In a consuming project, the
+default scan includes Pyragify because it is a declared dependency.
 
 The local packaging check uses Library Skills `0.0.19` against isolated wheel,
 editable, and source-distribution installations:
@@ -185,19 +188,22 @@ Commands:
 
 ## Parser Dependencies
 
-Official Tree-sitter Python bindings and eight individual grammar packages
-(JavaScript, TypeScript, Java, C, C++, Go, HTML, and CSS) are required dependencies,
-installed with Pyragify at pinned versions. Do not upgrade them independently.
-Python analysis continues to use the standard-library `ast` module.
-
-For a source checkout containing `pyproject.toml` and `uv.lock`, install the
-locked dependencies from the checkout root:
+Install `pyragify[graph]` to build graphs. It adds pinned Tree-sitter bindings
+and grammars for JavaScript, TypeScript, Java, C, C++, Go, HTML, and CSS.
+The base installation supports source export and queries against existing
+graph JSON.
 
 ```bash
-uv sync --locked
+uv pip install "pyragify[graph] @ https://github.com/ThomasBury/pyragify/releases/download/0.6.0/pyragify-0.6.0-py3-none-any.whl"
 ```
 
-This command is for repository development, not for a standalone pip installation.
+For a source checkout, the locked development group includes both the graph
+and the secret-scanning extras so the full test suite can run. To install only
+the base package in that checkout:
+
+```bash
+uv sync --locked --no-dev
+```
 
 ### Development Dependencies
 

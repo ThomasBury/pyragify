@@ -32,7 +32,8 @@ def test_named_arrows_are_callers_and_callees(tmp_path, suffix, async_keyword, b
                             ('file::' + file, file + '::caller')}
     assert GraphQuery(graph).get_call_hierarchy('run')['callers'] == [
         {'name': 'caller', 'file': file, 'line': 3}]
-    assert GraphQuery(graph).get_call_hierarchy('run')['callees'] == [{'name': 'leaf', 'line': 2}]
+    assert GraphQuery(graph).get_call_hierarchy('run')['callees'] == [
+        {'name': 'leaf', 'file': file, 'line': 2}]
     assert {item.node.id for item in GraphQuery(graph).find_related_context(file + '::caller', 1, ['calls'])} == {file + '::run', 'file::' + file}
 
 

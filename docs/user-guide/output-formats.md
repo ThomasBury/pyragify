@@ -92,8 +92,9 @@ The index must also fit, or the export fails. Increase the limit or narrow the
 selection; there is no silent truncation or partial-source output.
 
 `max_file_size` excludes oversized input files before processing and records
-the omission. JSON artifacts have no word limit. File selection is not secret
-detection. Do not change sources during a run: whole-repository snapshot isolation
-is unsupported. Experimental graph extraction can reread sources independently.
+the omission. JSON artifacts have no word limit. Use the optional
+[secret scan](../getting-started/configuration.md#scan-for-potential-secrets)
+to check the source before publishing. Keep sources stable during an export.
+Experimental graph extraction can reread sources independently.
 Ordinary raised write failures restore prior published artifacts; crash recovery
 and concurrent writers are unsupported. See [configuration](../getting-started/configuration.md).

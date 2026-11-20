@@ -6,7 +6,7 @@ their subcommand. Short aliases such as `-r` and `-c` are not defined.
 ## Process a repository
 
 ```bash
-pyragify process-repo --repo-path ./my-project --output-dir ./output --enable-graph
+pyragify process-repo --repo-path ./my-project --output-dir ./output
 ```
 
 | Option | Behavior |
@@ -19,7 +19,8 @@ pyragify process-repo --repo-path ./my-project --output-dir ./output --enable-gr
 | `--skip-patterns TEXT` | Override configured skip patterns; repeat for multiple patterns |
 | `--skip-dirs TEXT` | Override skipped directory names; repeat for multiple names |
 | `--verbose` / `--no-verbose` | Override verbose logging |
-| `--enable-graph` / `--no-enable-graph` | Override experimental graph building, outside the trusted handoff |
+| `--enable-graph` / `--no-enable-graph` | Override experimental graph building; building requires `pyragify[graph]` |
+| `--scan-secrets` / `--no-scan-secrets` | Override the optional pre-publication scan, which requires `pyragify[scan]` |
 | `--graph-output-dir PATH` | Graph output directory; relative paths are under text output |
 | `--graph-format TEXT` | Only `json` is supported |
 | `--include-relationships TEXT` | Unsupported; graph-enabled processing rejects filtering |
@@ -45,7 +46,8 @@ pyragify query-graph --graph-path output/graphs/repository_graph.json --command 
 
 | Option | Behavior |
 | --- | --- |
-| `--graph-path PATH` | JSON input; defaults to `output/graphs/repository_graph.json` |
+| `--graph-path PATH` | JSON input; otherwise uses the configured graph directory or `output/graphs/repository_graph.json` |
+| `--config-file PATH` | YAML for the default graph path; defaults to `config.yaml` |
 | `--command TEXT` | Required: `stats`, `related`, `hierarchy`, `dependencies`, or `search` |
 | `--entity TEXT` | Node ID for related context; function name or qualified ID for hierarchy; file path for dependencies |
 | `--depth INTEGER` | Related-context traversal depth; default 2 |

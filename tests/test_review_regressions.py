@@ -1,21 +1,21 @@
 import pytest
 
 from pyragify.graph import GraphBuilder, GraphQuery, KnowledgeGraph
-from pyragify.processor import FileProcessor, is_probably_binary_file
+from pyragify.processor import FileProcessor, RepoContentProcessor
 
 
 @pytest.mark.parametrize("character", ["é", "€", "🐍"])
-def test_utf8_sample_boundary_is_text(tmp_path, character):
-    path = tmp_path / "text.md"
+def test_utf8_sample_boundary_is_text(tmp_path, monkeypatch, character):
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr("pyragify.processor.ProcessPoolExecutor", ThreadPoolExecutor)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    path = repo / "text.md"
     path.write_text("a" * 2047 + character, encoding="utf-8")
-    assert not is_probably_binary_file(path)
-
-
-@pytest.mark.parametrize("content", [b"abc\xff", b"a" * 2047 + b"\xc3", b"a\x00b"])
-def test_invalid_utf8_or_nul_is_binary(tmp_path, content):
-    path = tmp_path / "binary"
-    path.write_bytes(content)
-    assert is_probably_binary_file(path)
+    processor = RepoContentProcessor(repo, tmp_path / "output")
+    processor.process_repo()
+    assert [item["path"] for item in processor.metadata["processed_files"]] == ["text.md"]
 
 
 def build(tmp_path, path, content):
@@ -260,7 +260,7 @@ def test_native_go_symbols(tmp_path):
 def test_dependency_query_failures_are_logged(tmp_path, monkeypatch, caplog, filename, source):
     def fail_query(*args):
         raise ValueError('injected invalid query')
-    monkeypatch.setattr('pyragify.graph.Query', fail_query)
+    monkeypatch.setattr('tree_sitter.Query', fail_query)
     GraphBuilder(tmp_path).extract_dependencies(tmp_path / filename, source,
                                                {'.js': 'javascript', '.java': 'java', '.c': 'c'}[
                                                    (tmp_path / filename).suffix])

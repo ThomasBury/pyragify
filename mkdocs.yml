@@ -59,6 +59,7 @@ nav:
       - Knowledge Graph: user-guide/knowledge-graph.md
       - Supported Languages: user-guide/supported-languages.md
       - Output Contract: user-guide/output-formats.md
+      - Chat Ingestion Evaluation: user-guide/ingestion-evaluation.md
       - Repomix Comparison: user-guide/repomix-comparison.md
   - API Reference:
       - "pyragify package": reference/pyragify/index.md

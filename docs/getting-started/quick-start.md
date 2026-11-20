@@ -45,7 +45,7 @@ cache, and deleted files disappear from the new handoff. A failed export leaves
 the previous published handoff intact for ordinary raised errors. Do not edit
 sources or run concurrent exports during processing.
 
-Graph building is optional and experimental:
+Graph building is experimental and requires the `pyragify[graph]` extra.
 
 ```bash
 uv run pyragify process-repo --config-file config.yaml --enable-graph
@@ -53,8 +53,8 @@ uv run pyragify query-graph --graph-path output/graphs/repository_graph.json --c
 ```
 
 Graphs are outside the trusted source handoff. Inspect selected files before
-sharing; filtering is not secret detection. No particular chat service's
-acceptance or answer quality is guaranteed.
+sharing, with the [optional secret scan](configuration.md#scan-for-potential-secrets)
+if needed.
 
 See [configuration](configuration.md), the [CLI reference](../user-guide/cli-reference.md),
 and the [output contract](../user-guide/output-formats.md) for details.

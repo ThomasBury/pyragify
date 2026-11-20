@@ -6,8 +6,8 @@ are correct, and graph data is separate from the readable source chunks.
 
 ## Parser runtime
 
-Pyragify requires Python 3.12 (`>=3.12,<3.13`). Official Tree-sitter 0.26.1
-bindings and individually pinned grammars are installed with the package for
+Pyragify requires Python 3.12 (`>=3.12,<3.13`). The `pyragify[graph]` extra
+installs official Tree-sitter 0.26.1 bindings and individually pinned grammars for
 JavaScript, TypeScript, Java, C, C++, Go, HTML, and CSS. Each analysis gets a fresh
 native parser. Python analysis uses the standard-library `ast` module. HTML and
 CSS graph chunks still use the existing regex extraction after parsing.
@@ -21,12 +21,14 @@ logged as warnings. Syntax errors and extraction failures can leave an incomplet
 graph, while the source export retains the complete file.
 
 Cache version 10 rebuilds records written by version 9 or earlier on the next
-export. CLI options, configuration, and the graph JSON schema are unchanged.
-Grammar upgrades can change extracted relationships. Syntax support is bounded
+export. Grammar upgrades can change extracted relationships. Syntax support is bounded
 by each pinned grammar, especially TypeScript; JavaScript resource-declaration
 support does not imply TypeScript support.
 
 ## Build and query
+
+Install the [graph extra](../getting-started/installation.md#parser-dependencies)
+before building a graph.
 
 ```bash
 pyragify process-repo --repo-path ./my-project --output-dir ./output --enable-graph
@@ -37,7 +39,11 @@ pyragify query-graph --command related --entity 'src/app.py::A' --depth 2
 ```
 
 Relative graph output directories are resolved under the text output directory.
-When using another output location, pass its graph path to every query.
+The manifest records `graph.output_path` relative to that directory. A graph
+on a different Windows drive uses an absolute path.
+Queries use `output_dir` and `graph.output_dir` from `config.yaml` or the file
+given to `--config-file`. Pass `--graph-path` to use a different graph. Existing
+graph JSON can be queried with the base package.
 Graphs are stored as JSON with `nodes`, `edges`, and `metadata` fields. See the
 [CLI reference](cli-reference.md) for query options.
 
@@ -46,7 +52,9 @@ Graphs are stored as JSON with `nodes`, `edges`, and `metadata` fields. See the
 Symbols include their enclosing scopes. Methods `A.run` and `B.run` remain
 separate even when defined in the same file. Repeated or unnamed chunks receive
 unique IDs. Hierarchy queries accept bare names, qualified names, or node IDs;
-a bare name can return multiple locations.
+a bare name can return multiple locations. In a callee entry, `file` is the
+definition's file (or `<external>` for a placeholder), and `line` is the call site
+in the caller.
 
 ## Relationships and limits
 
